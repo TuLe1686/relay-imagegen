@@ -30,7 +30,7 @@ def user_config_path() -> Path:
     return Path.home() / ".config" / "relay-imagegen" / "config.json"
 
 
-def candidate_paths() -> list[Path]:
+def candidate_paths(include_skill_config: bool = True) -> list[Path]:
     paths = []
     env_path = os.environ.get("RELAY_IMAGEGEN_CONFIG")
     if env_path:
@@ -40,7 +40,7 @@ def candidate_paths() -> list[Path]:
             Path.cwd() / "photo" / "api_key.json",
             Path.cwd() / ".secrets" / "image_api.json",
             Path.cwd() / ".secrets" / "relay_imagegen.json",
-            SKILL_CONFIG,
+            SKILL_CONFIG if include_skill_config else None,
             user_config_path(),
             Path.home() / ".config" / "relay-imagegen" / "config.json",
             Path.home() / ".relay-imagegen.json",
@@ -49,6 +49,8 @@ def candidate_paths() -> list[Path]:
     deduped = []
     seen = set()
     for path in paths:
+        if path is None:
+            continue
         key = str(path).lower()
         if key not in seen:
             deduped.append(path)
@@ -56,12 +58,44 @@ def candidate_paths() -> list[Path]:
     return deduped
 
 
-def load_json(path: Path) -> dict[str, Any] | None:
+def load_json(path: Path, quiet: bool = False) -> dict[str, Any] | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
-        print(f"BROKEN_CONFIG={path} ({exc})")
+        if not quiet:
+            print(f"BROKEN_CONFIG={path} ({exc})")
         return None
+
+
+def check_json_config(path: Path, quiet: bool = False) -> int:
+    data = load_json(path, quiet=quiet)
+    if data is None:
+        return 1
+    api_key = (
+        data.get("api_key")
+        or data.get("apiKey")
+        or data.get("key")
+        or data.get("token")
+        or data.get("openai_api_key")
+        or data.get("OPENAI_API_KEY")
+    )
+    base_url = (
+        data.get("base_url")
+        or data.get("baseUrl")
+        or data.get("baseURL")
+        or data.get("api_base")
+        or data.get("endpoint")
+        or data.get("openai_base_url")
+        or data.get("OPENAI_BASE_URL")
+    )
+    model = data.get("model", "gpt-image-2")
+    if quiet:
+        return 0 if api_key and base_url else 2
+    print(f"CONFIG={path}")
+    print(f"API_KEY={redact(str(api_key)) if api_key else 'missing'}")
+    print(f"BASE_URL={base_url or 'missing'}")
+    print(f"MODEL={model}")
+    return 0 if api_key and base_url else 2
 
 
 def redact(value: str | None) -> str:
@@ -93,6 +127,12 @@ def extract_base_url_from_ccswitch_config(config: Any) -> str | None:
 
 
 def check() -> int:
+    if SKILL_CONFIG.exists():
+        skill_status = check_json_config(SKILL_CONFIG, quiet=True)
+        if skill_status == 0:
+            check_json_config(SKILL_CONFIG)
+            return 0
+
     codex_status = check_codex(quiet_missing=True)
     if codex_status == 0:
         return 0
@@ -100,36 +140,13 @@ def check() -> int:
     if ccswitch_status == 0:
         return 0
     found = False
-    for path in candidate_paths():
+    for path in candidate_paths(include_skill_config=False):
         if not path.exists():
             continue
         found = True
-        data = load_json(path)
-        if data is None:
-            continue
-        api_key = (
-            data.get("api_key")
-            or data.get("apiKey")
-            or data.get("key")
-            or data.get("token")
-            or data.get("openai_api_key")
-            or data.get("OPENAI_API_KEY")
-        )
-        base_url = (
-            data.get("base_url")
-            or data.get("baseUrl")
-            or data.get("baseURL")
-            or data.get("api_base")
-            or data.get("endpoint")
-            or data.get("openai_base_url")
-            or data.get("OPENAI_BASE_URL")
-        )
-        model = data.get("model", "gpt-image-2")
-        print(f"CONFIG={path}")
-        print(f"API_KEY={redact(str(api_key)) if api_key else 'missing'}")
-        print(f"BASE_URL={base_url or 'missing'}")
-        print(f"MODEL={model}")
-        return 0 if api_key and base_url else 2
+        status = check_json_config(path)
+        if status != 1:
+            return status
     if not found:
         print("CONFIG=missing")
         print("If Codex already uses a relay, run: python scripts/setup.py --check-codex")
