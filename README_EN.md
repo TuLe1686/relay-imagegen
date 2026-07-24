@@ -360,7 +360,12 @@ python $skill generate `
   --force
 ```
 
-Use `--prompt-file` for long prompts, Chinese prompts, or reusable prompts. Successful runs also save the prompt text into the `.meta.json` `prompt_snapshot` field.
+Use `--prompt-file` for long prompts, Chinese prompts, or reusable prompts. Successful runs also write:
+
+- `prompt_snapshot` / `prompt_sha256` / `prompt_chars` near the top of `.meta.json` (easy to compare chat-model rewrites)
+- a sibling `.prompt.txt` with the full prompt for side-by-side diffs
+
+This skill is aimed at designers who already have taste and craft: the chat model is the director; the skill is a stable relay execution and recording layer that amplifies capability rather than forcing one style across models.
 
 ## Edit with Reference Images
 

@@ -250,9 +250,10 @@ After generation, report:
 - Actual width and height.
 - Whether the size matched the requested `--size`.
 - Whether the call used `generate` or `edit`.
-- Sidecar metadata path.
+- Sidecar metadata path (`*.meta.json`).
+- Prompt compare helpers when present: `PROMPT_SHA256`, `PROMPT_CHARS`, sibling `*.prompt.txt`.
 
-The wrapper filters the noisy `OPENAI_API_KEY is set.` line from child process output. For successful calls it writes a sibling sidecar file, for example `final-2k.meta.json`, containing non-secret run metadata: mode, model, size, quality, prompt file, prompt snapshot, input image paths, prepared image dimensions, output dimensions, elapsed seconds, config source/path, Codex or ccswitch provider name when used, and base URL. It must never include the API key.
+The wrapper filters the noisy `OPENAI_API_KEY is set.` line from child process output. For successful calls it writes a sibling sidecar file, for example `final-2k.meta.json`, with prompt fields near the top (`prompt_snapshot`, `prompt_sha256`, `prompt_chars`, `prompt_preview`) plus mode, model, size, quality, input image paths, prepared image dimensions, output dimensions, elapsed seconds, config source/path, Codex or ccswitch provider name when used, and base URL. It also writes `final-2k.prompt.txt` with the exact prompt text for side-by-side diffs across chat models. It must never include the API key.
 
 If the relay rejects a model, size, or endpoint, report the exact non-secret error summary and suggest the smallest next adjustment, such as testing `generate` before `edit`, checking `base_url`, or switching model only if the user asks.
 

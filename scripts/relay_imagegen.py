@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 from datetime import datetime
+import hashlib
 import io
 import json
 import os
@@ -500,6 +501,20 @@ def prompt_snapshot(args: argparse.Namespace) -> str | None:
         return f"<could not read prompt file: {exc}>"
 
 
+def prompt_fingerprint(text: str | None) -> dict[str, Any]:
+    """Compact fields so designers can compare runs without diffing full JSON first."""
+    if text is None:
+        return {"prompt_chars": 0, "prompt_sha256": None, "prompt_preview": None}
+    normalized = text.replace("\r\n", "\n").strip()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    preview = normalized if len(normalized) <= 160 else normalized[:157] + "..."
+    return {
+        "prompt_chars": len(normalized),
+        "prompt_sha256": digest,
+        "prompt_preview": preview,
+    }
+
+
 def write_sidecar(
     out: Path,
     args: argparse.Namespace,
@@ -510,17 +525,23 @@ def write_sidecar(
     elapsed: float,
 ) -> Path:
     sidecar = out.with_suffix(".meta.json")
+    snapshot = prompt_snapshot(args)
+    fingerprint = prompt_fingerprint(snapshot)
+    # Prompt fields first: chat-model "director" output is the main cross-model compare key.
     meta = {
         "mode": args.mode,
+        "prompt_file": args.prompt_file,
+        "prompt": args.prompt,
+        "prompt_snapshot": snapshot,
+        "prompt_chars": fingerprint["prompt_chars"],
+        "prompt_sha256": fingerprint["prompt_sha256"],
+        "prompt_preview": fingerprint["prompt_preview"],
         "model": args.model or cfg.get("model", "gpt-image-2"),
         "size": args.size,
         "quality": args.quality,
         "output_format": args.output_format or "png",
         "output": str(out),
         "dimensions": dimensions,
-        "prompt": args.prompt,
-        "prompt_file": args.prompt_file,
-        "prompt_snapshot": prompt_snapshot(args),
         "images": images_for_metadata(images),
         "config_path": config_path,
         "config_source": "codex" if str(config_path).startswith("codex:") else "ccswitch" if str(config_path).startswith("ccswitch:") else "file",
@@ -531,7 +552,17 @@ def write_sidecar(
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     sidecar.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Sibling plain text: easy side-by-side diff across chat models / runs.
+    if snapshot is not None:
+        prompt_sidecar = out.with_suffix(".prompt.txt")
+        prompt_sidecar.write_text(snapshot if snapshot.endswith("\n") else snapshot + "\n", encoding="utf-8")
+        print(f"PROMPT_FILE_OUT={prompt_sidecar}")
     print(f"META={sidecar}")
+    print(f"PROMPT_CHARS={fingerprint['prompt_chars']}")
+    if fingerprint["prompt_sha256"]:
+        print(f"PROMPT_SHA256={fingerprint['prompt_sha256']}")
+    if fingerprint["prompt_preview"]:
+        print(f"PROMPT_PREVIEW={fingerprint['prompt_preview']}")
     return sidecar
 
 

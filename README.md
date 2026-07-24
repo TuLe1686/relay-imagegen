@@ -412,7 +412,12 @@ python $skill generate `
   --force
 ```
 
-长提示词、中文提示词或希望保留复用的提示词，建议使用 `--prompt-file`。成功出图后，提示词内容也会写入 `.meta.json` 的 `prompt_snapshot` 字段。
+长提示词、中文提示词或希望保留复用的提示词，建议使用 `--prompt-file`。成功出图后：
+
+- `.meta.json` 顶部附近有 `prompt_snapshot` / `prompt_sha256` / `prompt_chars`（方便对比不同对话模型润色后的差异）
+- 同名的 `.prompt.txt` 保存完整提示词，便于并排 diff
+
+本 skill 面向有审美与作图能力的设计师：对话模型当「导演」，skill 当稳定的中转执行与记录层，用来放大能力，而不是统一所有模型的出图风格。
 
 ## 使用参考图编辑图片
 
