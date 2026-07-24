@@ -537,12 +537,27 @@ def main() -> int:
     parser.add_argument("--output-dir")
     parser.add_argument("--name")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
-    parser.add_argument("--prepare-image", action="store_true")
+    parser.add_argument(
+        "--prepare-image",
+        action="store_true",
+        help="Downscale reference images before upload. Enabled by default for edit.",
+    )
+    parser.add_argument(
+        "--no-prepare-image",
+        action="store_true",
+        help="Disable default edit-mode reference image preparation.",
+    )
     parser.add_argument("--max-input-edge", type=int)
     parser.add_argument("--keep-prepared", action="store_true", help="Keep prepared upload copies under generated/relay_prepared.")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    if args.mode == "edit" and not args.no_prepare_image:
+        # Default-on for edit: shrink upload payload; does not affect chat context.
+        args.prepare_image = True
+    if args.prepare_image and args.no_prepare_image:
+        die("Use either --prepare-image or --no-prepare-image, not both.")
 
     cfg, config_path = load_config(
         args.config,

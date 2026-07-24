@@ -423,7 +423,6 @@ python $skill edit `
   --image C:/path/to/reference.jpg `
   --prompt-file prompts/edit.txt `
   --name edit-test `
-  --prepare-image `
   --force
 ```
 
@@ -435,7 +434,6 @@ python $skill edit `
   --image C:/path/to/character.jpg `
   --prompt-file prompts/edit.txt `
   --name final `
-  --prepare-image `
   --force
 ```
 
@@ -445,17 +443,17 @@ python $skill edit `
 - 一张图作为人物设定或服装参考
 - 生成“现实照片环境中出现二次元角色”之类的合成画面
 
+在 **Codex 桌面端**请用绝对路径文本提供参考图，不要用聊天 UI 附加大图（会撑爆上下文）。Cursor 附件行为不同，通常不易触发同样问题。
+
 ## 参考图预处理
 
-高分辨率参考图可能上传慢、占用更高，或者增加中转站请求失败概率。
+`edit` **默认**会在上传前将参考图最长边压缩到 `2048` 像素。
 
-使用：
+如需关闭：
 
 ```powershell
---prepare-image
+--no-prepare-image
 ```
-
-会在上传前将参考图最长边压缩到默认 `2048` 像素。
 
 也可以自行指定最大边长：
 
@@ -535,7 +533,8 @@ generated/character-chair-20260527-183000-2k.meta.json
 | `--size` | 输出分辨率 | `2560x1440` |
 | `--quality` | 输出质量 | `high` |
 | `--timeout` | 超时时间，单位为秒 | `600` |
-| `--prepare-image` | 上传前压缩参考图 | 关闭 |
+| `--prepare-image` | 上传前压缩参考图 | edit 默认开启 |
+| `--no-prepare-image` | 关闭 edit 默认预处理 | 关闭 |
 | `--max-input-edge` | 指定参考图最大边长，同时开启预处理 | `2048` |
 | `--keep-prepared` | 保留预处理上传副本到 `generated/relay_prepared/` | 关闭 |
 | `--dry-run` | 只检查命令和输出位置，不实际请求 | 关闭 |
@@ -620,6 +619,38 @@ https://relay.example/v1
 ```powershell
 python $skill generate --prompt-file prompts/test.txt --timeout 900 --name test --force
 ```
+
+### Codex 桌面端附参考图报 context window 满
+
+现象：
+
+```text
+Codex ran out of room in the model's context window.
+Start a new thread or clear earlier history before retrying.
+```
+
+常见触发：在 **Codex 桌面端**用聊天 UI 附加参考图/参考文件后跑 `$relay-imagegen`。同一操作在 **Cursor** 往往正常。
+
+原因：
+
+- Codex 桌面端会把附件编进模型多模态上下文，高分辨率或多张图会占满窗口。
+- 这是对话层预算问题，通常发生在 `relay_imagegen.py` 还没开始请求中转之前。
+- Cursor 的附件注入方式不同，所以表现不一致。
+
+正确用法：
+
+1. 新开线程（清空历史）。
+2. 用**绝对路径文本**提供参考图，不要再在 UI 里附加大图。
+3. 让 agent 只调 CLI，例如：
+
+```powershell
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
+```
+
+4. 不要让 agent 用 Read/视觉工具再打开参考图。
+5. 长提示词放进 `prompts/*.txt`，用 `--prompt-file`。
+
+`edit` 默认会做上传前预处理（最长边 2048）；这只减小中转上传体积，**不能**解决聊天附件撑爆上下文。需要原图上传时再加 `--no-prepare-image`。
 
 ## 仓库结构
 

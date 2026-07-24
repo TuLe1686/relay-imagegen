@@ -371,7 +371,6 @@ python $skill edit `
   --image C:/path/to/reference.jpg `
   --prompt-file prompts/edit.txt `
   --name edit-test `
-  --prepare-image `
   --force
 ```
 
@@ -383,21 +382,22 @@ python $skill edit `
   --image C:/path/to/character.jpg `
   --prompt-file prompts/edit.txt `
   --name final `
-  --prepare-image `
   --force
 ```
 
 This is useful when one reference provides composition or environment and another reference provides character identity or clothing.
 
+On **Codex desktop**, pass absolute path text for references. Avoid large UI attachments (they can exhaust the context window). Cursor handles attachments differently and is less likely to hit the same limit.
+
 ## Reference Image Preparation
 
-Use:
+`edit` **defaults** to downscaling reference images to a max edge of `2048` pixels before upload.
+
+Disable with:
 
 ```powershell
---prepare-image
+--no-prepare-image
 ```
-
-to downscale reference images to a max edge of `2048` pixels before upload.
 
 Specify a different max edge:
 
@@ -477,7 +477,8 @@ It does not include API keys.
 | `--size` | Output size | `2560x1440` |
 | `--quality` | Output quality | `high` |
 | `--timeout` | Timeout in seconds | `600` |
-| `--prepare-image` | Downscale references before upload | Off |
+| `--prepare-image` | Downscale references before upload | On for edit |
+| `--no-prepare-image` | Disable default edit preparation | Off |
 | `--max-input-edge` | Reference max edge, also enables preparation | `2048` |
 | `--keep-prepared` | Keep prepared upload copies under `generated/relay_prepared/` | Off |
 | `--dry-run` | Print non-secret command shape only | Off |
@@ -562,6 +563,38 @@ Increase timeout:
 ```powershell
 python $skill generate --prompt-file prompts/test.txt --timeout 900 --name test --force
 ```
+
+### Codex desktop context window overflow with reference images
+
+Symptom:
+
+```text
+Codex ran out of room in the model's context window.
+Start a new thread or clear earlier history before retrying.
+```
+
+Common trigger: attaching reference images/files in the **Codex desktop** chat UI while running `$relay-imagegen`. The same flow often works in **Cursor**.
+
+Why:
+
+- Codex desktop embeds chat attachments into the multimodal model context. Large or multiple images can fill the window.
+- This is a conversation-layer budget issue and usually happens before `relay_imagegen.py` calls the relay.
+- Cursor injects attachments differently, so the behavior diverges.
+
+Correct usage:
+
+1. Start a new thread (clear history).
+2. Provide reference images as **absolute path text**, not large UI attachments.
+3. Call the CLI only, for example:
+
+```powershell
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
+```
+
+4. Do not let the agent Read/view the reference image bytes into the chat.
+5. Keep long prompts in `prompts/*.txt` with `--prompt-file`.
+
+`edit` prepares uploads by default (max edge 2048). That only reduces relay upload size; it does **not** fix chat-attachment context overflow. Use `--no-prepare-image` only when you need the original file uploaded unchanged.
 
 ## Repository Layout
 

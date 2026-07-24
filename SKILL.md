@@ -1,9 +1,47 @@
 ---
 name: relay-imagegen
-description: Generate or edit images through a local OpenAI-compatible relay or proxy endpoint, with saved prompt files and non-secret run metadata. Use when the user wants relay/proxy image generation, reusable or saved prompts, reuse of current Codex or ccswitch relay config, api_key.json/base_url config, or a repeatable local image workflow without persistent OPENAI_API_KEY environment variables.
+description: >-
+  Generate or edit images through a local OpenAI-compatible relay or proxy
+  endpoint, with saved prompt files and non-secret run metadata. Use when the
+  user wants relay/proxy image generation, reusable or saved prompts, reuse of
+  current Codex or ccswitch relay config, api_key.json/base_url config, or a
+  repeatable local image workflow without persistent OPENAI_API_KEY environment
+  variables. On Codex desktop with reference images/files, use path-only CLI
+  edit and never re-read image bytes into chat (context-window overflow risk).
 ---
 
 # Relay Imagegen
+
+## Codex desktop: reference images / files (context budget)
+
+Codex desktop embeds chat attachments into the multimodal model context. Large
+or multiple reference images often trigger:
+
+```text
+Codex ran out of room in the model's context window.
+Start a new thread or clear earlier history before retrying.
+```
+
+Cursor usually injects attachments differently, so the same flow may work in
+Cursor and fail in Codex desktop. That is a conversation-layer limit, not a
+broken relay script.
+
+Hard rules when the user provides reference images or files:
+
+1. Do **not** Read/view/describe reference image bytes in chat. Do not analyze
+   the image first, then generate.
+2. Do **not** open `README.md`, `README/*.png`, or other sample images for this
+   task.
+3. Resolve absolute paths only, then call CLI `edit --image <abs-path> ...`
+   (repeat `--image` for multiple refs).
+4. Prefer path text over chat UI attachments. If the thread already overflowed,
+   start a **new thread** with path text only.
+5. Keep long prompts in `prompts/*.txt` + `--prompt-file`.
+6. After success, report paths and `.meta.json` only; do not re-read output
+   images into chat.
+7. `edit` prepares uploads by default (max edge `2048`). That only shrinks
+   relay upload size; it does **not** fix chat-attachment context overflow.
+   Use `--no-prepare-image` only when original upload size is required.
 
 ## Fast Path
 
@@ -16,7 +54,7 @@ Use `scripts/relay_imagegen.py` directly. The defaults are tuned for low-thinkin
 - High quality.
 - Config lookup: `--config` first, then this skill's private `.secrets/config.json` if valid, then current Codex config/auth, then ccswitch, then other private config files.
 - Auto output path: `generated/<name>-YYYYMMDD-HHMMSS-2k.png`.
-- Optional input downscaling with `--prepare-image` or `--max-input-edge`.
+- Edit-mode input downscaling is on by default (`--prepare-image`; disable with `--no-prepare-image`).
 
 Agent rules:
 
@@ -54,10 +92,10 @@ Require the current ccswitch Codex provider instead of falling back:
 python $skill generate --from-ccswitch --prompt-file prompts/prompt.txt --name output --force
 ```
 
-Minimal edit with references:
+Minimal edit with references (path only; do not UI-attach large images on Codex desktop):
 
 ```powershell
-python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/prompt.txt --name edit --prepare-image --force
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/prompt.txt --name edit --force
 ```
 
 Prefer `--prompt-file` over `--prompt` for saved/reusable prompts, long prompts, Chinese text, or prompts that should not appear in shell history. Successful runs copy the prompt text into the sidecar metadata as `prompt_snapshot`.
@@ -138,7 +176,7 @@ If `--out` is omitted, the script writes a timestamped file under `--output-dir`
 
 Use `prompts/` for reusable prompt files in a project. Do not create `photo/prompt.txt` just because the config example uses `photo/api_key.json`; if the current workspace is already named `photo`, that would produce awkward paths such as `photo/photo/prompt.txt`.
 
-Edit with reference images:
+Edit with reference images (absolute paths only):
 
 ```powershell
 python $skill edit `
@@ -149,15 +187,20 @@ python $skill edit `
   --force
 ```
 
-For heavy reference images, prefer:
+Override prepare edge or disable preparation:
 
 ```powershell
 python $skill edit `
   --image C:/path/to/reference.jpg `
   --prompt-file prompts/prompt.txt `
-  --prepare-image `
-  --max-input-edge 2048 `
+  --max-input-edge 1536 `
   --timeout 900
+
+python $skill edit `
+  --image C:/path/to/reference.jpg `
+  --prompt-file prompts/prompt.txt `
+  --no-prepare-image `
+  --force
 ```
 
 ## Options
@@ -172,7 +215,8 @@ python $skill edit `
 - `--ccswitch-db <path>`: Override the ccswitch SQLite database path.
 - `--timeout <seconds>`: Cap how long the relay call can run. Default is `600`.
 - `--output-dir <path>`: Directory for auto-named outputs when `--out` is omitted. Default is `generated`, or `RELAY_IMAGEGEN_OUTPUT_DIR` if set.
-- `--prepare-image`: Downscale edit input images before upload. Default edge is `2048`; prepared copies are temporary and deleted after the run.
+- `--prepare-image`: Downscale edit input images before upload. Enabled by default for `edit`. Default edge is `2048`; prepared copies are temporary and deleted after the run.
+- `--no-prepare-image`: Disable default edit-mode preparation.
 - `--max-input-edge <pixels>`: Downscale edit inputs to fit this max edge. Also enables image preparation.
 - `--keep-prepared`: Keep prepared upload copies under `generated/relay_prepared/` for debugging.
 - `--name <slug>`: Use this base name when `--out` is omitted.
@@ -191,3 +235,5 @@ After generation, report:
 The wrapper filters the noisy `OPENAI_API_KEY is set.` line from child process output. For successful calls it writes a sibling sidecar file, for example `final-2k.meta.json`, containing non-secret run metadata: mode, model, size, quality, prompt file, prompt snapshot, input image paths, prepared image dimensions, output dimensions, elapsed seconds, config source/path, Codex or ccswitch provider name when used, and base URL. It must never include the API key.
 
 If the relay rejects a model, size, or endpoint, report the exact non-secret error summary and suggest the smallest next adjustment, such as testing `generate` before `edit`, checking `base_url`, or switching model only if the user asks.
+
+If the failure is a **context window** error at the chat layer (script never ran): start a new thread and pass reference images as absolute path text only; do not re-attach large images in the UI.
