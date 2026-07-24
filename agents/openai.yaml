@@ -1,4 +1,4 @@
 interface:
   display_name: "Relay Imagegen"
   short_description: "Relay image generation with saved prompts"
-  default_prompt: "Use the relay image generation workflow to create or edit an image through current Codex config, ccswitch, or private relay config, save the prompt and non-secret run metadata, and avoid persistent API key environment variables. UI-attached references are supported: resolve local paths, run preview to compress for agent vision, optionally Read only PREVIEW paths with short notes, then edit with ORIGINAL paths."
+  default_prompt: "Use the relay image generation workflow to create or edit an image through current Codex config, ccswitch, or private relay config, save the prompt and non-secret run metadata, and avoid persistent API key environment variables. UI-attached references are supported: resolve local paths, run preview to compress for agent vision, optionally Read only PREVIEW paths with short notes, then edit with ORIGINAL paths. When calling shell tools, timeout_ms must be an integer without decimals (e.g. 900000 not 900000.0)."
