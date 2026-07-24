@@ -12,6 +12,16 @@ description: >-
 
 # Relay Imagegen
 
+## Product stance (designers)
+
+This skill amplifies people who already have taste and craft. The **chat model is
+the director** (interpret intent, optionally polish the image prompt). The skill
+is the **camera rig** (relay config, fixed `--size`, saved prompts, run records).
+
+Do not try to force identical images across different chat models. Different
+directors write different final prompts; that is expected. To compare runs, use
+`prompt_sha256` / `prompt_snapshot` in `*.meta.json` and the sibling `*.prompt.txt`.
+
 ## Reference images (UI attach is normal)
 
 Users may provide references by **chat UI attachment**, workspace path, or both.
