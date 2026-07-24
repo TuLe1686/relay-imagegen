@@ -59,6 +59,37 @@ python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.t
 5. `preview` = agent vision budget. `edit --prepare-image` = relay upload budget.
    They are separate.
 
+### Failure & retry policy (hard)
+
+On any non-zero exit from `relay_imagegen.py`:
+
+1. Report only the script `FAILURE_SUMMARY` / stderr tail to the user.
+2. **Do not** switch `--model` or invent alternate models.
+3. **Do not** downsize (e.g. 4K → `1536x1024`) or change aspect to “make it work”.
+4. **At most one** retry, and **only** if the user explicitly agrees to a concrete change.
+5. Do not spawn temp monitor scripts or multi-model matrices.
+
+Empty `b64_json` means stop. The error looks like:
+
+```text
+Error: empty b64_json from edit (model=… size=…).
+```
+
+That is terminal unless the user consents to a new plan.
+
+### Size vs reference vs model id (hard)
+
+When the user provides reference / prompt images:
+
+1. **4K / 2K size follows the reference orientation** (portrait ref → `2160x3840` /
+   `1440x2560`; landscape ref → `3840x2160` / `2560x1440`). The CLI auto-aligns
+   known 2K/4K tiers; agents must pass the matching tier (`--size` 4K or 2K), not a
+   random landscape default for a portrait photo.
+2. If config `model` contains `16x9` / `9x16` / `1x1`, the CLI aligns `--size` to that
+   aspect when there is **no** conflicting reference. If the model token conflicts
+   with the reference orientation, the CLI **stops** with a clear error. Use
+   `--allow-aspect-mismatch` only after the user agrees (do not invent another model).
+
 If a **context window** error happens before tools run (host already injected
 huge attachments), recover with a clean thread and the same flow: resolve path →
 `preview` → short Read of PREVIEW → `edit` with ORIGINAL. Do not blame the user
@@ -84,6 +115,7 @@ Agent rules:
 - Do not pass `--output-dir` unless the user asks for a custom directory.
 - Default size is `2560x1440` landscape. Omit `--size` only when the user does not request a different resolution or aspect ratio.
 - If the user asks for 4K, 2K, horizontal/landscape, vertical/portrait, square, 16:9, 9:16, 1:1, wallpaper, avatar, or any explicit framing/aspect ratio, pass `--size` explicitly.
+- **With reference images**, map 4K/2K to the **reference orientation** (portrait photo + 4K → `--size 2160x3840`, not landscape 3840x2160). The CLI also re-aligns known tiers.
 - Do not pass `--quality` or `--timeout` unless the user asks; defaults are already useful.
 - Use `prompts/<short-name>.txt` for saved prompts in the current workspace.
 - Use `generated/` as the default output location.
@@ -270,6 +302,6 @@ After generation, report:
 
 The wrapper filters the noisy `OPENAI_API_KEY is set.` line from child process output. For successful calls it writes a sibling sidecar file, for example `final-2k.meta.json`, with prompt fields near the top (`prompt_snapshot`, `prompt_sha256`, `prompt_chars`, `prompt_preview`) plus mode, model, size, quality, input image paths, prepared image dimensions, output dimensions, elapsed seconds, config source/path, Codex or ccswitch provider name when used, and base URL. It also writes `final-2k.prompt.txt` with the exact prompt text for side-by-side diffs across chat models. It must never include the API key.
 
-If the relay rejects a model, size, or endpoint, report the exact non-secret error summary and suggest the smallest next adjustment, such as testing `generate` before `edit`, checking `base_url`, or switching model only if the user asks.
+If the relay rejects a model, size, or endpoint, report the exact non-secret error summary (`FAILURE_SUMMARY`) and stop. Do **not** switch model or downsize unless the user explicitly agrees. Empty `b64_json` is a hard stop, not a cue to try `1536x1024`.
 
 If a **context window** error happens at the chat layer (script never ran): start a clean thread, keep UI attachments if the user attached them, resolve paths, run `preview`, Read only `PREVIEW` paths, then `edit` with `ORIGINAL` paths—no full-res re-open, no README, no long vision writeup.

@@ -555,6 +555,7 @@ generated/character-chair-20260527-183000-2k.meta.json
 | `--keep-prepared` | 保留预处理上传副本到 `generated/relay_prepared/` | 关闭 |
 | `--dry-run` | 只检查命令和输出位置，不实际请求 | 关闭 |
 | `--use-system-proxy` | 使用系统 `HTTP(S)_PROXY`；**默认忽略代理**直连中转 | 关闭 |
+| `--allow-aspect-mismatch` | 允许 model 名画幅与参考图朝向冲突（需用户同意） | 关闭 |
 | `--force` | 允许覆盖目标输出 | 关闭 |
 | `--config` | 显式指定 JSON 配置 | 自动读取 |
 | `--from-codex` | 强制使用 Codex 当前配置，失败不回退 | 关闭 |
@@ -651,6 +652,12 @@ bundled `image_gen.py` 侧也会用 `httpx.Client(trust_env=False)`，避免 ope
 ### 自定义生图 model 名
 
 中转站模型名不必以 `gpt-image-` 开头。若仍报 model 前缀错误，说明本机 system `imagegen` 的 `image_gen.py` 还是旧版校验；更新/覆盖为已放宽校验的版本即可。
+
+### 参考图 / 4K 画幅 / model 名里的 16x9
+
+- 有参考图时：2K/4K 的 `--size` 会按**参考图朝向**对齐（竖图 4K → `2160x3840`）。
+- model id 含 `16x9` / `9x16` / `1x1` 时：无参考图则按 model 对齐 size；与参考图冲突则**直接失败**，不会偷偷换 model 或降到 `1536x1024`。
+- 失败时 stderr 含 `FAILURE_POLICY` / `FAILURE_SUMMARY`：只汇报，默认不重试；用户同意后最多改一次。
 
 ### Codex 桌面端附参考图报 context window 满
 

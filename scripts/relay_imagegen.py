@@ -317,6 +317,144 @@ def parse_size(size: str) -> tuple[int, int] | None:
     return int(left), int(right)
 
 
+# Known output tiers used for orientation alignment (2K/4K/square).
+SIZE_BY_TIER_ORIENT = {
+    "4k": {"landscape": "3840x2160", "portrait": "2160x3840", "square": "2048x2048"},
+    "2k": {"landscape": "2560x1440", "portrait": "1440x2560", "square": "2048x2048"},
+    "square": {"landscape": "2048x2048", "portrait": "2048x2048", "square": "2048x2048"},
+}
+SIZE_TO_TIER = {
+    "3840x2160": "4k",
+    "2160x3840": "4k",
+    "2560x1440": "2k",
+    "1440x2560": "2k",
+    "2048x2048": "square",
+}
+
+
+def orientation_from_wh(width: int, height: int) -> str:
+    if width == height:
+        return "square"
+    return "landscape" if width > height else "portrait"
+
+
+def orientation_from_size(size: str) -> str | None:
+    parsed = parse_size(size)
+    if not parsed:
+        return None
+    return orientation_from_wh(parsed[0], parsed[1])
+
+
+def aspect_from_model_name(model: str) -> str | None:
+    """Parse 16x9 / 9x16 / 1x1 tokens often embedded in relay model ids."""
+    text = str(model or "").lower().replace(":", "x")
+    compact = re.sub(r"[^a-z0-9x]+", "", text)
+    if "16x9" in compact:
+        return "landscape"
+    if "9x16" in compact:
+        return "portrait"
+    if "1x1" in compact:
+        return "square"
+    return None
+
+
+def first_reference_orientation(image_args: list[str] | None) -> tuple[str, Path] | None:
+    if not image_args:
+        return None
+    try:
+        from PIL import Image
+    except Exception:
+        return None
+    for raw in image_args:
+        path = Path(raw)
+        if not path.exists():
+            continue
+        with Image.open(path) as img:
+            width, height = img.size
+        return orientation_from_wh(width, height), path
+    return None
+
+
+def resolve_size_for_run(args: argparse.Namespace, model: str) -> str:
+    """
+    Align --size with:
+    1) reference image orientation when refs exist (edit), for 2K/4K tiers
+    2) model-name aspect tokens (16x9 / 9x16 / 1x1)
+    On hard conflict (model aspect vs reference), stop unless --allow-aspect-mismatch.
+    """
+    size = str(args.size)
+    tier = SIZE_TO_TIER.get(size)
+    size_orient = orientation_from_size(size)
+    model_aspect = aspect_from_model_name(model)
+    ref_info = first_reference_orientation(args.image) if args.mode == "edit" else None
+    ref_orient = ref_info[0] if ref_info else None
+    ref_path = ref_info[1] if ref_info else None
+
+    # With reference images: 2K/4K size must follow the reference orientation.
+    if ref_orient and tier in {"2k", "4k"}:
+        target = SIZE_BY_TIER_ORIENT[tier][ref_orient]
+        if size != target:
+            print(f"SIZE_ALIGN=reference:{size}->{target}")
+            if ref_path:
+                print(f"REFERENCE={ref_path}")
+                print(f"REFERENCE_ORIENT={ref_orient}")
+            size = target
+            size_orient = ref_orient
+
+    # Model id encodes a fixed aspect: align size, or stop on conflict with reference.
+    if model_aspect:
+        if (
+            ref_orient
+            and ref_orient != model_aspect
+            and model_aspect != "square"
+            and ref_orient != "square"
+            and not args.allow_aspect_mismatch
+        ):
+            die(
+                f"Model {model!r} implies {model_aspect} (token in model id), "
+                f"but reference image is {ref_orient}. "
+                f"Use a matching model, or pass --allow-aspect-mismatch only after the user agrees. "
+                f"Do not silently switch model or downscale size."
+            )
+        if not ref_orient:
+            tier_for_model = tier or ("4k" if "4k" in str(model).lower() else "2k")
+            if tier_for_model not in SIZE_BY_TIER_ORIENT:
+                tier_for_model = "2k"
+            target = SIZE_BY_TIER_ORIENT[tier_for_model][model_aspect]
+            if size != target:
+                print(f"SIZE_ALIGN=model:{size}->{target}")
+                size = target
+                size_orient = model_aspect
+        elif model_aspect == "square" and size != "2048x2048" and not args.allow_aspect_mismatch:
+            # Square model with non-square size and no ref-driven tier: snap to square.
+            if not ref_orient:
+                print(f"SIZE_ALIGN=model:{size}->2048x2048")
+                size = "2048x2048"
+
+    if size_orient and model_aspect and size_orient != model_aspect and not args.allow_aspect_mismatch:
+        # After alignment still mismatched (custom WxH): stop rather than guess.
+        if ref_orient is None and SIZE_TO_TIER.get(size) is None:
+            die(
+                f"Size {size} orientation is {size_orient} but model {model!r} implies {model_aspect}. "
+                f"Pass a matching --size, or --allow-aspect-mismatch after user consent."
+            )
+
+    print(f"SIZE_RESOLVED={size}")
+    if model_aspect:
+        print(f"MODEL_ASPECT={model_aspect}")
+    if ref_orient:
+        print(f"REFERENCE_ORIENT={ref_orient}")
+    return size
+
+
+def failure_policy_message() -> str:
+    return (
+        "FAILURE_POLICY=report_stderr_only; "
+        "do_not_switch_model; do_not_downsize; "
+        "at_most_one_retry_and_only_with_user_consent"
+    )
+
+
 def verify_dimensions(path: Path, requested_size: str) -> dict[str, Any]:
     requested = parse_size(requested_size)
     if not path.exists():
@@ -371,7 +509,13 @@ def default_output_path(args: argparse.Namespace) -> Path:
     else:
         base = f"relay-{args.mode}"
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    size_label = "2k" if args.size == "2560x1440" else "4k" if args.size == "3840x2160" else args.size
+    size_label = (
+        "4k"
+        if args.size in {"3840x2160", "2160x3840"}
+        else "2k"
+        if args.size in {"2560x1440", "1440x2560"}
+        else args.size
+    )
     return out_dir / f"{sanitize_stem(base)}-{timestamp}-{size_label}.png"
 
 
@@ -686,6 +830,11 @@ def main() -> int:
         action="store_true",
         help="Allow HTTP(S)_PROXY from the environment. Default is to ignore proxies (direct to relay).",
     )
+    parser.add_argument(
+        "--allow-aspect-mismatch",
+        action="store_true",
+        help="Allow model-name aspect (16x9/9x16/1x1) to disagree with reference orientation. Requires user consent.",
+    )
     args = parser.parse_args()
 
     # Host tool schemas (Codex timeout_ms) reject floats; keep wall-clock budget as plain int.
@@ -712,6 +861,9 @@ def main() -> int:
         args.codex_config,
         args.codex_auth,
     )
+    model = str(args.model or cfg.get("model", "gpt-image-2"))
+    args.size = resolve_size_for_run(args, model)
+    # Rebuild default out path after size alignment so filename tier matches.
     out = Path(args.out) if args.out else default_output_path(args)
     args.out = str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -732,7 +884,7 @@ def main() -> int:
         )
 
         print(f"MODE={args.mode}")
-        print(f"MODEL={args.model or cfg.get('model', 'gpt-image-2')}")
+        print(f"MODEL={model}")
         print(f"SIZE={args.size}")
         print(f"OUT={out}")
         print(f"TIMEOUT={args.timeout}")
@@ -742,6 +894,10 @@ def main() -> int:
             print(f"CODEX_PROVIDER={cfg['codex_provider_name']}")
         if cfg.get("ccswitch_provider_name"):
             print(f"CCSWITCH_PROVIDER={cfg['ccswitch_provider_name']}")
+
+        # Ensure build_command sees the resolved model when args.model was omitted.
+        if not args.model:
+            args.model = model
 
         cmd = build_command(args, cfg, images)
         if args.dry_run:
@@ -760,6 +916,7 @@ def main() -> int:
                 timeout=int(args.timeout),
             )
         except subprocess.TimeoutExpired:
+            print(failure_policy_message(), file=sys.stderr)
             die(f"Image generation timed out after {args.timeout}s.", code=124)
 
         stdout = filter_process_output(result.stdout or "")
@@ -769,6 +926,16 @@ def main() -> int:
         if stderr:
             print(stderr, file=sys.stderr)
         if result.returncode != 0:
+            print(failure_policy_message(), file=sys.stderr)
+            summary = (stderr or stdout or "relay call failed").strip().splitlines()
+            tail = summary[-8:] if summary else ["relay call failed"]
+            print("FAILURE_SUMMARY=" + " | ".join(line.strip() for line in tail if line.strip()), file=sys.stderr)
+            print(
+                "NEXT=Stop. Report FAILURE_SUMMARY to the user. "
+                "Do not switch model, do not change --size downward, "
+                "and do not invent alternate sizes (e.g. 1536x1024) unless the user explicitly agrees.",
+                file=sys.stderr,
+            )
             return result.returncode
         dimensions = verify_dimensions(out, args.size)
         write_sidecar(out, args, cfg, config_path, images, dimensions, time.time() - started)
