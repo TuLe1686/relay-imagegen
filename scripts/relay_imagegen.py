@@ -490,6 +490,38 @@ def filter_process_output(text: str) -> str:
     return "\n".join(filtered)
 
 
+PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "SOCKS_PROXY",
+    "socks_proxy",
+    "SOCKS5_PROXY",
+    "socks5_proxy",
+)
+
+
+def apply_child_env(
+    cfg: dict[str, Any],
+    *,
+    use_system_proxy: bool = False,
+) -> dict[str, str]:
+    """Build env for image_gen subprocess: inject key/url, default ignore proxies."""
+    env = os.environ.copy()
+    env["OPENAI_API_KEY"] = str(cfg["api_key"])
+    env["OPENAI_BASE_URL"] = str(cfg["base_url"])
+    if not use_system_proxy:
+        for key in PROXY_ENV_KEYS:
+            env.pop(key, None)
+        # httpx/openai may still consult NO_PROXY; force bypass of all hosts.
+        env["NO_PROXY"] = "*"
+        env["no_proxy"] = "*"
+    return env
+
+
 def prompt_snapshot(args: argparse.Namespace) -> str | None:
     if args.prompt is not None:
         return args.prompt
@@ -643,6 +675,11 @@ def main() -> int:
     parser.add_argument("--keep-prepared", action="store_true", help="Keep prepared upload copies under generated/relay_prepared.")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--use-system-proxy",
+        action="store_true",
+        help="Allow HTTP(S)_PROXY from the environment. Default is to ignore proxies (direct to relay).",
+    )
     args = parser.parse_args()
 
     if args.mode == "preview":
@@ -677,15 +714,14 @@ def main() -> int:
         prep_dir = out.parent / "relay_prepared" if args.keep_prepared and needs_prepared_images else Path(temp_dir) if temp_dir else None
         images = prepare_images(args, out, prep_dir, prepared_temporary=bool(needs_prepared_images and not args.keep_prepared))
 
-        env = os.environ.copy()
-        env["OPENAI_API_KEY"] = str(cfg["api_key"])
-        env["OPENAI_BASE_URL"] = str(cfg["base_url"])
+        env = apply_child_env(cfg, use_system_proxy=args.use_system_proxy)
 
         print(f"MODE={args.mode}")
         print(f"MODEL={args.model or cfg.get('model', 'gpt-image-2')}")
         print(f"SIZE={args.size}")
         print(f"OUT={out}")
         print(f"TIMEOUT={args.timeout}")
+        print(f"PROXY={'system' if args.use_system_proxy else 'ignored'}")
         if cfg.get("codex_provider_name"):
             print(f"CODEX_PROVIDER={cfg['codex_provider_name']}")
         if cfg.get("ccswitch_provider_name"):

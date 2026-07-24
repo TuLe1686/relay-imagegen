@@ -251,6 +251,7 @@ python $skill edit `
 - `--keep-prepared`: Keep prepared upload copies under `generated/relay_prepared/` for debugging.
 - `--name <slug>`: Use this base name when `--out` is omitted.
 - `--dry-run`: Print the non-secret command shape without calling the relay.
+- `--use-system-proxy`: Keep `HTTP(S)_PROXY` from the environment. **Default is to ignore proxies** so CN-reachable relays go direct (httpx otherwise often inherits system proxy).
 
 ## Validation
 

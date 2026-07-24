@@ -554,6 +554,7 @@ generated/character-chair-20260527-183000-2k.meta.json
 | `--max-input-edge` | 指定参考图最大边长，同时开启预处理 | `2048` |
 | `--keep-prepared` | 保留预处理上传副本到 `generated/relay_prepared/` | 关闭 |
 | `--dry-run` | 只检查命令和输出位置，不实际请求 | 关闭 |
+| `--use-system-proxy` | 使用系统 `HTTP(S)_PROXY`；**默认忽略代理**直连中转 | 关闭 |
 | `--force` | 允许覆盖目标输出 | 关闭 |
 | `--config` | 显式指定 JSON 配置 | 自动读取 |
 | `--from-codex` | 强制使用 Codex 当前配置，失败不回退 | 关闭 |
@@ -635,6 +636,21 @@ https://relay.example/v1
 ```powershell
 python $skill generate --prompt-file prompts/test.txt --timeout 900 --name test --force
 ```
+
+### 请求走了系统代理 / 中转超时
+
+本 skill **默认忽略** `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`（大陆可直连的中转站更稳）。  
+若你确实需要代理访问中转，再加：
+
+```powershell
+python $skill generate --prompt-file prompts/test.txt --use-system-proxy --name test --force
+```
+
+bundled `image_gen.py` 侧也会用 `httpx.Client(trust_env=False)`，避免 openai SDK 自动读系统代理。
+
+### 自定义生图 model 名
+
+中转站模型名不必以 `gpt-image-` 开头。若仍报 model 前缀错误，说明本机 system `imagegen` 的 `image_gen.py` 还是旧版校验；更新/覆盖为已放宽校验的版本即可。
 
 ### Codex 桌面端附参考图报 context window 满
 

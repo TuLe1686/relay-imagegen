@@ -498,6 +498,7 @@ It does not include API keys.
 | `--max-input-edge` | Reference max edge, also enables preparation | `2048` |
 | `--keep-prepared` | Keep prepared upload copies under `generated/relay_prepared/` | Off |
 | `--dry-run` | Print non-secret command shape only | Off |
+| `--use-system-proxy` | Keep system `HTTP(S)_PROXY`; **default ignores proxies** (direct to relay) | Off |
 | `--force` | Allow overwrite behavior in bundled CLI | Off |
 | `--config` | Explicit JSON config path | Auto lookup |
 | `--from-codex` | Require current Codex config, no fallback | Off |
@@ -579,6 +580,20 @@ Increase timeout:
 ```powershell
 python $skill generate --prompt-file prompts/test.txt --timeout 900 --name test --force
 ```
+
+### System proxy hijacks relay traffic
+
+By default this skill **ignores** `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` so CN-reachable relays can be hit directly. If you truly need a proxy to reach the relay:
+
+```powershell
+python $skill generate --prompt-file prompts/test.txt --use-system-proxy --name test --force
+```
+
+The bundled `image_gen.py` also uses `httpx.Client(trust_env=False)` so the OpenAI SDK does not inherit system proxy settings.
+
+### Custom image model names
+
+Relay model ids do not need a `gpt-image-` prefix. If you still see a prefix error, the local system `imagegen` `image_gen.py` is an older build—update it to the relaxed validation version.
 
 ### Codex desktop context window overflow with reference images
 
