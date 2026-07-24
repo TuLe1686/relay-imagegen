@@ -387,7 +387,7 @@ python $skill edit `
 
 This is useful when one reference provides composition or environment and another reference provides character identity or clothing.
 
-On **Codex desktop**, pass absolute path text for references. Avoid large UI attachments (they can exhaust the context window). Cursor handles attachments differently and is less likely to hit the same limit.
+**Codex desktop UI attachments are supported** as the normal way to pass references. The agent should resolve the local path from attachment metadata and call `edit --image`, without re-reading image bytes into chat. Cursor and Codex inject attachments differently, but the skill rule is the same: attaching is fine; re-reading is not.
 
 ## Reference Image Preparation
 
@@ -573,28 +573,21 @@ Codex ran out of room in the model's context window.
 Start a new thread or clear earlier history before retrying.
 ```
 
-Common trigger: attaching reference images/files in the **Codex desktop** chat UI while running `$relay-imagegen`. The same flow often works in **Cursor**.
+Notes:
 
-Why:
+- Codex desktop embeds chat attachments into multimodal context; long history plus many large attachments can fill the window.
+- **UI attach is a supported workflow.** Do not tell users to avoid attachments or paste paths only.
+- The usual amplifier is the agent **re-reading / re-viewing** images, opening README samples, or writing long vision analysis—not the attach button itself.
 
-- Codex desktop embeds chat attachments into the multimodal model context. Large or multiple images can fill the window.
-- This is a conversation-layer budget issue and usually happens before `relay_imagegen.py` calls the relay.
-- Cursor injects attachments differently, so the behavior diverges.
+Recovery:
 
-Correct usage:
+1. Start a clean thread (drop unrelated history).
+2. User may still attach references in the UI.
+3. Agent only: resolve attachment paths → short prompt file → `edit --image ...`.
+4. Do not re-read reference bytes, skill sample images, or produce long vision writeups.
+5. Only if a clean thread still fails: optionally reduce simultaneous attachments or use a smaller-resolution copy as a last resort.
 
-1. Start a new thread (clear history).
-2. Provide reference images as **absolute path text**, not large UI attachments.
-3. Call the CLI only, for example:
-
-```powershell
-python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
-```
-
-4. Do not let the agent Read/view the reference image bytes into the chat.
-5. Keep long prompts in `prompts/*.txt` with `--prompt-file`.
-
-`edit` prepares uploads by default (max edge 2048). That only reduces relay upload size; it does **not** fix chat-attachment context overflow. Use `--no-prepare-image` only when you need the original file uploaded unchanged.
+`edit` prepares uploads by default (max edge 2048) for relay upload size only; that is separate from chat context. Use `--no-prepare-image` when the original file must be uploaded unchanged.
 
 ## Repository Layout
 

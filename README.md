@@ -443,7 +443,7 @@ python $skill edit `
 - 一张图作为人物设定或服装参考
 - 生成“现实照片环境中出现二次元角色”之类的合成画面
 
-在 **Codex 桌面端**请用绝对路径文本提供参考图，不要用聊天 UI 附加大图（会撑爆上下文）。Cursor 附件行为不同，通常不易触发同样问题。
+**Codex 桌面端支持聊天 UI 附加参考图**，这是正常用法。Agent 应从附件元数据解析出本地路径，再调用 `edit --image`，不要再把图片读进对话。Cursor 与 Codex 的附件注入方式不同，但 skill 侧约定一致：附图合法，二次读图禁止。
 
 ## 参考图预处理
 
@@ -629,28 +629,21 @@ Codex ran out of room in the model's context window.
 Start a new thread or clear earlier history before retrying.
 ```
 
-常见触发：在 **Codex 桌面端**用聊天 UI 附加参考图/参考文件后跑 `$relay-imagegen`。同一操作在 **Cursor** 往往正常。
+说明：
 
-原因：
+- Codex 桌面端会把聊天附件编进多模态上下文；历史很长、附件很多时可能占满窗口。
+- **UI 附图是合法用法**，不要改成“只能贴路径、禁止附图”。
+- 常见放大因素是 agent **再次 Read/看图**、读 README/示例图、长篇视觉分析，而不是用户点了附加按钮。
 
-- Codex 桌面端会把附件编进模型多模态上下文，高分辨率或多张图会占满窗口。
-- 这是对话层预算问题，通常发生在 `relay_imagegen.py` 还没开始请求中转之前。
-- Cursor 的附件注入方式不同，所以表现不一致。
+恢复步骤：
 
-正确用法：
+1. 新开干净线程（丢掉无关历史）。
+2. 用户仍可 UI 附加参考图。
+3. Agent 只做：解析附件路径 → 写短 prompt 文件 → `edit --image ...`。
+4. 禁止再读参考图字节、禁止读 skill 示例图、禁止长分析。
+5. 仅在干净线程仍失败时，再可选减少同时附件数量或用较小分辨率副本（最后手段）。
 
-1. 新开线程（清空历史）。
-2. 用**绝对路径文本**提供参考图，不要再在 UI 里附加大图。
-3. 让 agent 只调 CLI，例如：
-
-```powershell
-python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
-```
-
-4. 不要让 agent 用 Read/视觉工具再打开参考图。
-5. 长提示词放进 `prompts/*.txt`，用 `--prompt-file`。
-
-`edit` 默认会做上传前预处理（最长边 2048）；这只减小中转上传体积，**不能**解决聊天附件撑爆上下文。需要原图上传时再加 `--no-prepare-image`。
+`edit` 默认上传前预处理（最长边 2048）只影响中转上传体积，与聊天上下文是两回事。需要原图上传时加 `--no-prepare-image`。
 
 ## 仓库结构
 

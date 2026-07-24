@@ -6,42 +6,44 @@ description: >-
   user wants relay/proxy image generation, reusable or saved prompts, reuse of
   current Codex or ccswitch relay config, api_key.json/base_url config, or a
   repeatable local image workflow without persistent OPENAI_API_KEY environment
-  variables. On Codex desktop with reference images/files, use path-only CLI
-  edit and never re-read image bytes into chat (context-window overflow risk).
+  variables. UI-attached reference images are supported; resolve attachment
+  paths and call CLI edit without re-reading image bytes into chat.
 ---
 
 # Relay Imagegen
 
-## Codex desktop: reference images / files (context budget)
+## Reference images (UI attach is normal)
 
-Codex desktop embeds chat attachments into the multimodal model context. Large
-or multiple reference images often trigger:
+Users may provide references by **chat UI attachment**, workspace path, or both.
+That is the expected UX on Codex desktop and Cursor. Do **not** ask the user to
+avoid attachments or to paste paths only.
 
-```text
-Codex ran out of room in the model's context window.
-Start a new thread or clear earlier history before retrying.
-```
+Agent rules for references:
 
-Cursor usually injects attachments differently, so the same flow may work in
-Cursor and fail in Codex desktop. That is a conversation-layer limit, not a
-broken relay script.
+1. **Resolve a filesystem path** for each reference:
+   - Prefer the absolute path from the attachment / message metadata.
+   - Else use a path the user typed or that exists under the workspace.
+2. Call CLI immediately: `edit --image <abs-path> ...` (repeat `--image`).
+3. Do **not** Read / view / re-encode / dump reference image bytes into the
+   conversation. Codex may already inject attachments; re-reading doubles cost.
+4. Do **not** open `README.md`, `README/*.png`, or sample images for this task.
+5. Do **not** write a long vision analysis first. At most a short role label
+   (e.g. composition / character) if needed for the prompt file.
+6. Put long prompts in `prompts/*.txt` + `--prompt-file`. Keep the chat turn short.
+7. After success, report output path, size check, and `.meta.json` only.
+   Do not re-read the output image into chat.
+8. `edit` prepares uploads by default (max edge `2048`) for the **relay upload**.
+   That is separate from chat context. Use `--no-prepare-image` only when the
+   user needs the original file uploaded unchanged.
 
-Hard rules when the user provides reference images or files:
+If a **context window** error happens before the script runs, recover without
+blaming the user for attaching files:
 
-1. Do **not** Read/view/describe reference image bytes in chat. Do not analyze
-   the image first, then generate.
-2. Do **not** open `README.md`, `README/*.png`, or other sample images for this
-   task.
-3. Resolve absolute paths only, then call CLI `edit --image <abs-path> ...`
-   (repeat `--image` for multiple refs).
-4. Prefer path text over chat UI attachments. If the thread already overflowed,
-   start a **new thread** with path text only.
-5. Keep long prompts in `prompts/*.txt` + `--prompt-file`.
-6. After success, report paths and `.meta.json` only; do not re-read output
-   images into chat.
-7. `edit` prepares uploads by default (max edge `2048`). That only shrinks
-   relay upload size; it does **not** fix chat-attachment context overflow.
-   Use `--no-prepare-image` only when original upload size is required.
+1. Start a fresh thread (drop unrelated history / other skills noise).
+2. Keep the same UI-attach workflow; agent must still path-resolve + CLI only.
+3. Prefer one request with the needed refs; avoid extra tool chatter.
+4. Only if still failing after a clean thread: try fewer simultaneous refs or
+   a lower-res copy **as an optional last resort**, not as the default rule.
 
 ## Fast Path
 
@@ -92,7 +94,7 @@ Require the current ccswitch Codex provider instead of falling back:
 python $skill generate --from-ccswitch --prompt-file prompts/prompt.txt --name output --force
 ```
 
-Minimal edit with references (path only; do not UI-attach large images on Codex desktop):
+Minimal edit with references (path may come from UI attachment metadata):
 
 ```powershell
 python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/prompt.txt --name edit --force
@@ -176,7 +178,7 @@ If `--out` is omitted, the script writes a timestamped file under `--output-dir`
 
 Use `prompts/` for reusable prompt files in a project. Do not create `photo/prompt.txt` just because the config example uses `photo/api_key.json`; if the current workspace is already named `photo`, that would produce awkward paths such as `photo/photo/prompt.txt`.
 
-Edit with reference images (absolute paths only):
+Edit with reference images (path from UI attachment or user-provided path):
 
 ```powershell
 python $skill edit `
@@ -236,4 +238,4 @@ The wrapper filters the noisy `OPENAI_API_KEY is set.` line from child process o
 
 If the relay rejects a model, size, or endpoint, report the exact non-secret error summary and suggest the smallest next adjustment, such as testing `generate` before `edit`, checking `base_url`, or switching model only if the user asks.
 
-If the failure is a **context window** error at the chat layer (script never ran): start a new thread and pass reference images as absolute path text only; do not re-attach large images in the UI.
+If a **context window** error happens at the chat layer (script never ran): start a clean thread, keep UI attachments if the user attached them, resolve attachment paths, and call CLI only—no re-read of image bytes, no README, no long vision writeup.
