@@ -309,13 +309,25 @@ def bundled_cli_path() -> Path:
 
 
 def parse_size(size: str) -> tuple[int, int] | None:
-    if "x" not in size:
+    if "x" not in str(size).lower():
         return None
-    left, right = size.lower().split("x", 1)
+    left, right = str(size).lower().split("x", 1)
     if not left.isdigit() or not right.isdigit():
         return None
     return int(left), int(right)
 
+
+# Canonical skill sizes only (never pass bare "4K"/"2K" to image_gen).
+CANONICAL_SIZES = frozenset(
+    {
+        "2560x1440",  # 2K landscape
+        "1440x2560",  # 2K portrait
+        "3840x2160",  # 4K landscape
+        "2160x3840",  # 4K portrait
+        "2048x2048",  # square
+        "auto",
+    }
+)
 
 # Known output tiers used for orientation alignment (2K/4K/square).
 SIZE_BY_TIER_ORIENT = {
@@ -375,20 +387,84 @@ def first_reference_orientation(image_args: list[str] | None) -> tuple[str, Path
     return None
 
 
+def normalize_size_alias(raw: str, *, orient_hint: str | None = None) -> str:
+    """
+    Map user/agent shorthand to skill-canonical WIDTHxHEIGHT.
+
+    Accepts only:
+      - exact WIDTHxHEIGHT from CANONICAL_SIZES (or other numeric WxH)
+      - aliases: 2k/4k/16:9/9:16/1:1/landscape/portrait/square
+    Never forwards bare '4K' to image_gen.
+    """
+    text = str(raw).strip()
+    if not text:
+        die("Missing --size.")
+
+    lower = text.lower().replace(" ", "").replace("：", ":")
+    # Normalize separator variants: 3840×2160, 3840*2160
+    lower = lower.replace("×", "x").replace("*", "x").replace("Ｘ", "x")
+
+    parsed = parse_size(lower)
+    if parsed:
+        canonical = f"{parsed[0]}x{parsed[1]}"
+        return canonical
+
+    orient = orient_hint if orient_hint in {"landscape", "portrait", "square"} else "landscape"
+    token = re.sub(r"[^a-z0-9:x]+", "", lower)
+
+    # Tier aliases (orientation from hint / reference)
+    if token in {"4k", "uhd", "ultra", "ultrahd"}:
+        return SIZE_BY_TIER_ORIENT["4k"][orient if orient != "square" else "landscape"]
+    if token in {"2k", "hd", "default", "fhd"}:
+        return SIZE_BY_TIER_ORIENT["2k"][orient if orient != "square" else "landscape"]
+
+    # Aspect-only aliases → default 2K tier unless token implies square
+    if token in {"16:9", "16x9", "landscape", "heng", "horizontal"}:
+        return SIZE_BY_TIER_ORIENT["2k"]["landscape"]
+    if token in {"9:16", "9x16", "portrait", "shu", "vertical"}:
+        return SIZE_BY_TIER_ORIENT["2k"]["portrait"]
+    if token in {"1:1", "1x1", "square", "fang"}:
+        return "2048x2048"
+
+    # Combined forms like 4k16:9 / 4k-portrait (after stripping non-alnum we get 4k169 etc.)
+    if token.startswith("4k") and ("169" in token or "16x9" in token or "landscape" in lower):
+        return "3840x2160"
+    if token.startswith("4k") and ("916" in token or "9x16" in token or "portrait" in lower):
+        return "2160x3840"
+    if token.startswith("2k") and ("169" in token or "16x9" in token or "landscape" in lower):
+        return "2560x1440"
+    if token.startswith("2k") and ("916" in token or "9x16" in token or "portrait" in lower):
+        return "1440x2560"
+
+    allowed = ", ".join(sorted(s for s in CANONICAL_SIZES if s != "auto"))
+    die(
+        f"Invalid --size {raw!r}. "
+        f"Use skill-canonical sizes only: {allowed}. "
+        f"Aliases 2k/4k are expanded to WIDTHxHEIGHT (with reference orientation when present). "
+        f"Never pass bare '4K' to the image API."
+    )
+    return DEFAULT_SIZE  # unreachable
+
+
 def resolve_size_for_run(args: argparse.Namespace, model: str) -> str:
     """
-    Align --size with:
-    1) reference image orientation when refs exist (edit), for 2K/4K tiers
-    2) model-name aspect tokens (16x9 / 9x16 / 1x1)
-    On hard conflict (model aspect vs reference), stop unless --allow-aspect-mismatch.
+    1) Expand aliases (4k/2k/…) → WIDTHxHEIGHT
+    2) With reference images: keep 2K/4K tier but match reference orientation
+    3) Model-name aspect (16x9/9x16/1x1): align when no ref conflict; else stop
     """
-    size = str(args.size)
-    tier = SIZE_TO_TIER.get(size)
-    size_orient = orientation_from_size(size)
     model_aspect = aspect_from_model_name(model)
     ref_info = first_reference_orientation(args.image) if args.mode == "edit" else None
     ref_orient = ref_info[0] if ref_info else None
     ref_path = ref_info[1] if ref_info else None
+
+    orient_hint = ref_orient or model_aspect or "landscape"
+    raw_size = str(args.size)
+    size = normalize_size_alias(raw_size, orient_hint=orient_hint)
+    if size != raw_size and not parse_size(raw_size):
+        print(f"SIZE_ALIAS={raw_size}->{size}")
+
+    tier = SIZE_TO_TIER.get(size)
+    size_orient = orientation_from_size(size)
 
     # With reference images: 2K/4K size must follow the reference orientation.
     if ref_orient and tier in {"2k", "4k"}:
@@ -408,7 +484,7 @@ def resolve_size_for_run(args: argparse.Namespace, model: str) -> str:
             and ref_orient != model_aspect
             and model_aspect != "square"
             and ref_orient != "square"
-            and not args.allow_aspect_mismatch
+            and not getattr(args, "allow_aspect_mismatch", False)
         ):
             die(
                 f"Model {model!r} implies {model_aspect} (token in model id), "
@@ -425,19 +501,10 @@ def resolve_size_for_run(args: argparse.Namespace, model: str) -> str:
                 print(f"SIZE_ALIGN=model:{size}->{target}")
                 size = target
                 size_orient = model_aspect
-        elif model_aspect == "square" and size != "2048x2048" and not args.allow_aspect_mismatch:
-            # Square model with non-square size and no ref-driven tier: snap to square.
-            if not ref_orient:
-                print(f"SIZE_ALIGN=model:{size}->2048x2048")
-                size = "2048x2048"
 
-    if size_orient and model_aspect and size_orient != model_aspect and not args.allow_aspect_mismatch:
-        # After alignment still mismatched (custom WxH): stop rather than guess.
-        if ref_orient is None and SIZE_TO_TIER.get(size) is None:
-            die(
-                f"Size {size} orientation is {size_orient} but model {model!r} implies {model_aspect}. "
-                f"Pass a matching --size, or --allow-aspect-mismatch after user consent."
-            )
+    # Final gate: only forward parseable WxH (or auto) to image_gen.
+    if size != "auto" and parse_size(size) is None:
+        die(f"Internal size resolution failed for {size!r}; expected WIDTHxHEIGHT.")
 
     print(f"SIZE_RESOLVED={size}")
     if model_aspect:

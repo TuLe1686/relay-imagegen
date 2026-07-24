@@ -83,8 +83,9 @@ When the user provides reference / prompt images:
 
 1. **4K / 2K size follows the reference orientation** (portrait ref → `2160x3840` /
    `1440x2560`; landscape ref → `3840x2160` / `2560x1440`). The CLI auto-aligns
-   known 2K/4K tiers; agents must pass the matching tier (`--size` 4K or 2K), not a
-   random landscape default for a portrait photo.
+   known 2K/4K tiers. Agents must pass **canonical WIDTHxHEIGHT only**, e.g.
+   `--size 2160x3840` — never `--size 4K` or `--size 2K` (those are user words,
+   not CLI values; the script will expand aliases, but prefer exact sizes).
 2. If config `model` contains `16x9` / `9x16` / `1x1`, the CLI aligns `--size` to that
    aspect when there is **no** conflicting reference. If the model token conflicts
    with the reference orientation, the CLI **stops** with a clear error. Use
@@ -114,13 +115,17 @@ Agent rules:
 - Do not run setup checks unless config lookup fails.
 - Do not pass `--output-dir` unless the user asks for a custom directory.
 - Default size is `2560x1440` landscape. Omit `--size` only when the user does not request a different resolution or aspect ratio.
-- If the user asks for 4K, 2K, horizontal/landscape, vertical/portrait, square, 16:9, 9:16, 1:1, wallpaper, avatar, or any explicit framing/aspect ratio, pass `--size` explicitly.
-- **With reference images**, map 4K/2K to the **reference orientation** (portrait photo + 4K → `--size 2160x3840`, not landscape 3840x2160). The CLI also re-aligns known tiers.
+- If the user asks for 4K, 2K, horizontal/landscape, vertical/portrait, square, 16:9, 9:16, 1:1, wallpaper, avatar, or any explicit framing/aspect ratio, pass `--size` as a **canonical pixel size**:
+  - 2K landscape `2560x1440`; 2K portrait `1440x2560`
+  - 4K landscape `3840x2160`; 4K portrait `2160x3840`
+  - square `2048x2048`
+  - **Never** `--size 4K` / `--size 2K` / `--size 16:9` as the CLI value (user may say “4K”; you translate to WIDTHxHEIGHT).
+- **With reference images**, map 4K/2K to the **reference orientation** (portrait photo + 4K → `--size 2160x3840`, not landscape `3840x2160`). The CLI also re-aligns known tiers and expands `4k`/`2k` aliases safely.
 - Do not pass `--quality` or `--timeout` unless the user asks; defaults are already useful.
 - Use `prompts/<short-name>.txt` for saved prompts in the current workspace.
 - Use `generated/` as the default output location.
 - On Windows, avoid PowerShell ternary syntax; assign `$skill` with a plain path.
-- Common sizes: 2K landscape `2560x1440`; 4K landscape `3840x2160`; 2K portrait `1440x2560`; 4K portrait `2160x3840`; square `2048x2048`.
+- Common sizes (only these pixel forms are valid `--size` values): 2K landscape `2560x1440`; 4K landscape `3840x2160`; 2K portrait `1440x2560`; 4K portrait `2160x3840`; square `2048x2048`.
 - **Host tool timeouts must be integers**: Codex/Cursor `timeout_ms` / `block_until_ms` reject floats
   such as `900000.0`. Use `900000` (no decimal). For `generate`/`edit`, prefer at least
   `900000` ms (15 minutes) wall time so 4K relay jobs are not killed early.
