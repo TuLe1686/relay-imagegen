@@ -406,8 +406,20 @@ def normalize_size_alias(raw: str, *, orient_hint: str | None = None) -> str:
 
     parsed = parse_size(lower)
     if parsed:
-        canonical = f"{parsed[0]}x{parsed[1]}"
-        return canonical
+        width, height = parsed
+        # Tiny pairs are aspect ratios (16x9 / 9x16 / 1x1), not pixel sizes.
+        if width <= 64 and height <= 64:
+            if (width, height) == (16, 9):
+                return SIZE_BY_TIER_ORIENT["2k"]["landscape"]
+            if (width, height) == (9, 16):
+                return SIZE_BY_TIER_ORIENT["2k"]["portrait"]
+            if (width, height) == (1, 1):
+                return "2048x2048"
+            die(
+                f"Invalid --size {raw!r}: {width}x{height} looks like an aspect ratio, "
+                f"not a pixel size. Use 2560x1440 / 1440x2560 / 3840x2160 / 2160x3840 / 2048x2048."
+            )
+        return f"{width}x{height}"
 
     orient = orient_hint if orient_hint in {"landscape", "portrait", "square"} else "landscape"
     token = re.sub(r"[^a-z0-9:x]+", "", lower)
