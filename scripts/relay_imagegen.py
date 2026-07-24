@@ -508,11 +508,17 @@ def apply_child_env(
     cfg: dict[str, Any],
     *,
     use_system_proxy: bool = False,
+    http_timeout_seconds: int | None = None,
 ) -> dict[str, str]:
     """Build env for image_gen subprocess: inject key/url, default ignore proxies."""
     env = os.environ.copy()
     env["OPENAI_API_KEY"] = str(cfg["api_key"])
     env["OPENAI_BASE_URL"] = str(cfg["base_url"])
+    # Integer seconds only — image_gen reads this for httpx timeout.
+    timeout_s = int(http_timeout_seconds if http_timeout_seconds is not None else DEFAULT_TIMEOUT_SECONDS)
+    if timeout_s < 60:
+        timeout_s = 60
+    env["RELAY_IMAGEGEN_HTTP_TIMEOUT"] = str(timeout_s)
     if not use_system_proxy:
         for key in PROXY_ENV_KEYS:
             env.pop(key, None)
@@ -682,6 +688,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # Host tool schemas (Codex timeout_ms) reject floats; keep wall-clock budget as plain int.
+    args.timeout = int(args.timeout)
+    if args.timeout < 1:
+        die("--timeout must be a positive integer number of seconds.")
+
     if args.mode == "preview":
         return run_preview(args)
 
@@ -714,13 +725,18 @@ def main() -> int:
         prep_dir = out.parent / "relay_prepared" if args.keep_prepared and needs_prepared_images else Path(temp_dir) if temp_dir else None
         images = prepare_images(args, out, prep_dir, prepared_temporary=bool(needs_prepared_images and not args.keep_prepared))
 
-        env = apply_child_env(cfg, use_system_proxy=args.use_system_proxy)
+        env = apply_child_env(
+            cfg,
+            use_system_proxy=args.use_system_proxy,
+            http_timeout_seconds=args.timeout,
+        )
 
         print(f"MODE={args.mode}")
         print(f"MODEL={args.model or cfg.get('model', 'gpt-image-2')}")
         print(f"SIZE={args.size}")
         print(f"OUT={out}")
         print(f"TIMEOUT={args.timeout}")
+        print(f"HTTP_TIMEOUT={env.get('RELAY_IMAGEGEN_HTTP_TIMEOUT')}")
         print(f"PROXY={'system' if args.use_system_proxy else 'ignored'}")
         if cfg.get("codex_provider_name"):
             print(f"CODEX_PROVIDER={cfg['codex_provider_name']}")
@@ -741,7 +757,7 @@ def main() -> int:
                 env=env,
                 text=True,
                 capture_output=True,
-                timeout=args.timeout,
+                timeout=int(args.timeout),
             )
         except subprocess.TimeoutExpired:
             die(f"Image generation timed out after {args.timeout}s.", code=124)

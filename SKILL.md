@@ -89,6 +89,10 @@ Agent rules:
 - Use `generated/` as the default output location.
 - On Windows, avoid PowerShell ternary syntax; assign `$skill` with a plain path.
 - Common sizes: 2K landscape `2560x1440`; 4K landscape `3840x2160`; 2K portrait `1440x2560`; 4K portrait `2160x3840`; square `2048x2048`.
+- **Host tool timeouts must be integers**: Codex/Cursor `timeout_ms` / `block_until_ms` reject floats
+  such as `900000.0`. Use `900000` (no decimal). For `generate`/`edit`, prefer at least
+  `900000` ms (15 minutes) wall time so 4K relay jobs are not killed early.
+- Prefer one long-running shell call to `relay_imagegen.py`; do not invent extra float timeouts.
 
 Windows path setup:
 
