@@ -25,6 +25,9 @@ DEFAULT_QUALITY = "high"
 DEFAULT_OUT_DIR = Path("generated")
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_PREPARED_EDGE = 2048
+# Small enough for agent vision / chat re-open; not for relay upload fidelity.
+DEFAULT_PREVIEW_EDGE = 768
+DEFAULT_PREVIEW_JPEG_QUALITY = 82
 SKILL_DIR = Path(__file__).resolve().parents[1]
 
 API_KEY_FIELDS = ("api_key", "apiKey", "key", "token", "openai_api_key", "OPENAI_API_KEY")
@@ -376,44 +379,94 @@ def prepared_image_path(prep_dir: Path, out: Path, image: Path, index: int) -> P
     return prep_dir / f"{out.stem}-input{index}-{image.stem}.jpg"
 
 
-def prepare_images(args: argparse.Namespace, out: Path, prep_dir: Path | None = None, prepared_temporary: bool = False) -> list[dict[str, str | int | bool]]:
+def downscale_to_jpeg(src: Path, dst: Path, max_edge: int, jpeg_quality: int = 92) -> dict[str, Any]:
+    try:
+        from PIL import Image
+    except Exception:
+        die("Image preparation requires Pillow. Install Pillow first.")
+
+    if not src.exists():
+        die(f"Image file not found: {src}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(src) as img:
+        original_size = img.size
+        img = img.convert("RGB")
+        img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+        img.save(dst, "JPEG", quality=jpeg_quality, optimize=True)
+        used_size = img.size
+    return {
+        "original": str(src.resolve()),
+        "used": str(dst.resolve()),
+        "prepared": True,
+        "original_width": original_size[0],
+        "original_height": original_size[1],
+        "used_width": used_size[0],
+        "used_height": used_size[1],
+        "max_input_edge": max_edge,
+        "bytes": dst.stat().st_size,
+    }
+
+
+def prepare_images(
+    args: argparse.Namespace,
+    out: Path,
+    prep_dir: Path | None = None,
+    prepared_temporary: bool = False,
+) -> list[dict[str, Any]]:
     if args.mode != "edit" or not args.image:
         return []
     if not args.prepare_image and not args.max_input_edge:
         return [{"original": image, "used": image, "prepared": False} for image in args.image]
 
     max_edge = args.max_input_edge or DEFAULT_PREPARED_EDGE
-    try:
-        from PIL import Image
-    except Exception:
-        die("Image preparation requires Pillow. Install Pillow or omit --prepare-image/--max-input-edge.")
-
     prepared = []
     for index, raw in enumerate(args.image, start=1):
         src = Path(raw)
-        if not src.exists():
-            die(f"Image file not found: {src}")
         dst = prepared_image_path(prep_dir or out.parent / "relay_prepared", out, src, index)
-        with Image.open(src) as img:
-            original_size = img.size
-            img = img.convert("RGB")
-            img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
-            img.save(dst, "JPEG", quality=92, optimize=True)
-            used_size = img.size
-        prepared.append(
-            {
-                "original": str(src),
-                "used": str(dst),
-                "prepared": True,
-                "prepared_temporary": prepared_temporary,
-                "original_width": original_size[0],
-                "original_height": original_size[1],
-                "used_width": used_size[0],
-                "used_height": used_size[1],
-                "max_input_edge": max_edge,
-            }
-        )
+        item = downscale_to_jpeg(src, dst, max_edge, jpeg_quality=92)
+        item["prepared_temporary"] = prepared_temporary
+        prepared.append(item)
     return prepared
+
+
+def run_preview(args: argparse.Namespace) -> int:
+    """Compress references for agent vision only; no relay call."""
+    if not args.image:
+        die("preview mode requires at least one --image.")
+    max_edge = args.max_input_edge or DEFAULT_PREVIEW_EDGE
+    out_dir = Path(args.output_dir or os.environ.get("RELAY_IMAGEGEN_OUTPUT_DIR", DEFAULT_OUT_DIR))
+    preview_dir = out_dir / "relay_preview"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    name = sanitize_stem(args.name or "preview")
+
+    print(f"MODE=preview")
+    print(f"MAX_EDGE={max_edge}")
+    print(f"PREVIEW_DIR={preview_dir.resolve()}")
+
+    if args.dry_run:
+        for index, raw in enumerate(args.image, start=1):
+            src = Path(raw)
+            dst = preview_dir / f"{name}-{stamp}-view{index}-{src.stem}.jpg"
+            print(f"ORIGINAL={src.resolve() if src.exists() else src}")
+            print(f"PREVIEW={dst}")
+        print("DRY_RUN=1")
+        return 0
+
+    for index, raw in enumerate(args.image, start=1):
+        src = Path(raw)
+        dst = preview_dir / f"{name}-{stamp}-view{index}-{src.stem}.jpg"
+        item = downscale_to_jpeg(src, dst, max_edge, jpeg_quality=DEFAULT_PREVIEW_JPEG_QUALITY)
+        print(f"ORIGINAL={item['original']}")
+        print(f"PREVIEW={item['used']}")
+        print(f"ORIGINAL_SIZE={item['original_width']}x{item['original_height']}")
+        print(f"PREVIEW_SIZE={item['used_width']}x{item['used_height']}")
+        print(f"PREVIEW_BYTES={item['bytes']}")
+    print(
+        "NOTE=Agent may Read PREVIEW paths only (short notes). "
+        "Use ORIGINAL paths with edit --image for relay upload."
+    )
+    return 0
 
 
 def images_for_metadata(images: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -517,7 +570,11 @@ def build_command(args: argparse.Namespace, cfg: dict[str, Any], images: list[di
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Relay wrapper for bundled image generation.")
-    parser.add_argument("mode", choices=["generate", "edit"])
+    parser.add_argument(
+        "mode",
+        choices=["generate", "edit", "preview"],
+        help="generate/edit call the relay; preview only downscales refs for agent vision.",
+    )
     parser.add_argument("--config")
     parser.add_argument("--from-codex", action="store_true", help="Require the current Codex config/auth provider.")
     parser.add_argument("--no-codex", action="store_true", help="Skip default Codex config/auth lookup.")
@@ -547,11 +604,18 @@ def main() -> int:
         action="store_true",
         help="Disable default edit-mode reference image preparation.",
     )
-    parser.add_argument("--max-input-edge", type=int)
+    parser.add_argument(
+        "--max-input-edge",
+        type=int,
+        help=f"Max edge for prepare/preview. Defaults: edit {DEFAULT_PREPARED_EDGE}, preview {DEFAULT_PREVIEW_EDGE}.",
+    )
     parser.add_argument("--keep-prepared", action="store_true", help="Keep prepared upload copies under generated/relay_prepared.")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    if args.mode == "preview":
+        return run_preview(args)
 
     if args.mode == "edit" and not args.no_prepare_image:
         # Default-on for edit: shrink upload payload; does not affect chat context.

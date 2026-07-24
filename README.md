@@ -443,7 +443,18 @@ python $skill edit `
 - 一张图作为人物设定或服装参考
 - 生成“现实照片环境中出现二次元角色”之类的合成画面
 
-**Codex 桌面端支持聊天 UI 附加参考图**，这是正常用法。Agent 应从附件元数据解析出本地路径，再调用 `edit --image`，不要再把图片读进对话。Cursor 与 Codex 的附件注入方式不同，但 skill 侧约定一致：附图合法，二次读图禁止。
+**Codex 桌面端支持聊天 UI 附加参考图**，这是正常用法。
+
+需要理解画面时，推荐：
+
+```powershell
+python $skill preview --image C:/path/to/reference.jpg --name ref
+# 只 Read 输出的 PREVIEW= 小图，写短备注；不要读原图
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
+```
+
+- `preview`：默认最长边 `768`，写出 `generated/relay_preview/`，供 agent 看图（省上下文）。
+- `edit`：仍用 **ORIGINAL** 路径上传；默认再压到最长边 `2048` 给中转。
 
 ## 参考图预处理
 
@@ -639,11 +650,11 @@ Start a new thread or clear earlier history before retrying.
 
 1. 新开干净线程（丢掉无关历史）。
 2. 用户仍可 UI 附加参考图。
-3. Agent 只做：解析附件路径 → 写短 prompt 文件 → `edit --image ...`。
-4. 禁止再读参考图字节、禁止读 skill 示例图、禁止长分析。
-5. 仅在干净线程仍失败时，再可选减少同时附件数量或用较小分辨率副本（最后手段）。
+3. Agent：解析附件路径 → `preview` 压缩 → 只 Read `PREVIEW` 写短备注 → `edit --image ORIGINAL`。
+4. 禁止再读原图/附件全分辨率、禁止读 skill 示例图、禁止长分析。
+5. 仅在干净线程仍失败时，再可选减少同时附件数量（最后手段）。
 
-`edit` 默认上传前预处理（最长边 2048）只影响中转上传体积，与聊天上下文是两回事。需要原图上传时加 `--no-prepare-image`。
+`preview`（默认边长 768）管 agent 看图预算；`edit` 默认上传前预处理（边长 2048）管中转上传体积。需要原图上传时加 `--no-prepare-image`。
 
 ## 仓库结构
 

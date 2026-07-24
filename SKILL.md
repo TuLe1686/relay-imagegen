@@ -6,8 +6,8 @@ description: >-
   user wants relay/proxy image generation, reusable or saved prompts, reuse of
   current Codex or ccswitch relay config, api_key.json/base_url config, or a
   repeatable local image workflow without persistent OPENAI_API_KEY environment
-  variables. UI-attached reference images are supported; resolve attachment
-  paths and call CLI edit without re-reading image bytes into chat.
+  variables. UI-attached reference images are supported: resolve paths, run
+  preview to compress, optionally view the small PREVIEW, then edit with ORIGINAL.
 ---
 
 # Relay Imagegen
@@ -18,32 +18,41 @@ Users may provide references by **chat UI attachment**, workspace path, or both.
 That is the expected UX on Codex desktop and Cursor. Do **not** ask the user to
 avoid attachments or to paste paths only.
 
-Agent rules for references:
+### Recommended flow when the agent needs to understand the image
 
-1. **Resolve a filesystem path** for each reference:
-   - Prefer the absolute path from the attachment / message metadata.
-   - Else use a path the user typed or that exists under the workspace.
-2. Call CLI immediately: `edit --image <abs-path> ...` (repeat `--image`).
-3. Do **not** Read / view / re-encode / dump reference image bytes into the
-   conversation. Codex may already inject attachments; re-reading doubles cost.
-4. Do **not** open `README.md`, `README/*.png`, or sample images for this task.
-5. Do **not** write a long vision analysis first. At most a short role label
-   (e.g. composition / character) if needed for the prompt file.
-6. Put long prompts in `prompts/*.txt` + `--prompt-file`. Keep the chat turn short.
-7. After success, report output path, size check, and `.meta.json` only.
-   Do not re-read the output image into chat.
-8. `edit` prepares uploads by default (max edge `2048`) for the **relay upload**.
-   That is separate from chat context. Use `--no-prepare-image` only when the
-   user needs the original file uploaded unchanged.
+1. **Resolve** a filesystem path for each reference (attachment metadata or typed path).
+2. **Compress for vision** (no relay call):
 
-If a **context window** error happens before the script runs, recover without
-blaming the user for attaching files:
+```powershell
+python $skill preview --image C:/path/to/reference.jpg --name ref
+```
 
-1. Start a fresh thread (drop unrelated history / other skills noise).
-2. Keep the same UI-attach workflow; agent must still path-resolve + CLI only.
-3. Prefer one request with the needed refs; avoid extra tool chatter.
-4. Only if still failing after a clean thread: try fewer simultaneous refs or
-   a lower-res copy **as an optional last resort**, not as the default rule.
+   - Default max edge: `768` (override with `--max-input-edge`).
+   - Prints `ORIGINAL=...` and `PREVIEW=...` under `generated/relay_preview/`.
+3. **May Read only `PREVIEW` paths** for short visual notes (subject, pose, colors,
+   composition). Do **not** Read the original high-res file or UI attachment again.
+4. Write a short prompt to `prompts/*.txt` from those notes + user intent.
+5. **Edit/upload with ORIGINAL path** (edit still prepares upload at max edge `2048`):
+
+```powershell
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
+```
+
+### Hard rules
+
+1. Do **not** open original / attachment full-resolution image bytes for analysis.
+2. Do **not** open `README.md`, `README/*.png`, or skill sample images.
+3. Vision notes stay short; no multi-paragraph art critique.
+4. After success, report output path, size check, and `.meta.json` only.
+   Do not re-read the final high-res output into chat (optional: `preview` it first
+   if a quick look is needed).
+5. `preview` = agent vision budget. `edit --prepare-image` = relay upload budget.
+   They are separate.
+
+If a **context window** error happens before tools run (host already injected
+huge attachments), recover with a clean thread and the same flow: resolve path →
+`preview` → short Read of PREVIEW → `edit` with ORIGINAL. Do not blame the user
+for attaching files.
 
 ## Fast Path
 
@@ -57,6 +66,7 @@ Use `scripts/relay_imagegen.py` directly. The defaults are tuned for low-thinkin
 - Config lookup: `--config` first, then this skill's private `.secrets/config.json` if valid, then current Codex config/auth, then ccswitch, then other private config files.
 - Auto output path: `generated/<name>-YYYYMMDD-HHMMSS-2k.png`.
 - Edit-mode input downscaling is on by default (`--prepare-image`; disable with `--no-prepare-image`).
+- Optional agent-vision downscale: `preview` (default max edge `768`) writes `PREVIEW=` under `generated/relay_preview/`.
 
 Agent rules:
 
@@ -97,6 +107,14 @@ python $skill generate --from-ccswitch --prompt-file prompts/prompt.txt --name o
 Minimal edit with references (path may come from UI attachment metadata):
 
 ```powershell
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/prompt.txt --name edit --force
+```
+
+When the agent needs to look at the reference first:
+
+```powershell
+python $skill preview --image C:/path/to/reference.jpg --name ref
+# Read only the printed PREVIEW= path (short notes), then:
 python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/prompt.txt --name edit --force
 ```
 
@@ -238,4 +256,4 @@ The wrapper filters the noisy `OPENAI_API_KEY is set.` line from child process o
 
 If the relay rejects a model, size, or endpoint, report the exact non-secret error summary and suggest the smallest next adjustment, such as testing `generate` before `edit`, checking `base_url`, or switching model only if the user asks.
 
-If a **context window** error happens at the chat layer (script never ran): start a clean thread, keep UI attachments if the user attached them, resolve attachment paths, and call CLI only—no re-read of image bytes, no README, no long vision writeup.
+If a **context window** error happens at the chat layer (script never ran): start a clean thread, keep UI attachments if the user attached them, resolve paths, run `preview`, Read only `PREVIEW` paths, then `edit` with `ORIGINAL` paths—no full-res re-open, no README, no long vision writeup.

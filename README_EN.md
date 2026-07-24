@@ -387,7 +387,18 @@ python $skill edit `
 
 This is useful when one reference provides composition or environment and another reference provides character identity or clothing.
 
-**Codex desktop UI attachments are supported** as the normal way to pass references. The agent should resolve the local path from attachment metadata and call `edit --image`, without re-reading image bytes into chat. Cursor and Codex inject attachments differently, but the skill rule is the same: attaching is fine; re-reading is not.
+**Codex desktop UI attachments are supported** as the normal way to pass references.
+
+When the agent needs to understand the image:
+
+```powershell
+python $skill preview --image C:/path/to/reference.jpg --name ref
+# Read only the printed PREVIEW= path for short notes; do not open the original
+python $skill edit --image C:/path/to/reference.jpg --prompt-file prompts/edit.txt --name edit --force
+```
+
+- `preview`: default max edge `768`, writes under `generated/relay_preview/` for agent vision.
+- `edit`: use the **ORIGINAL** path for upload; default prepare still downscales to max edge `2048` for the relay.
 
 ## Reference Image Preparation
 
@@ -583,11 +594,11 @@ Recovery:
 
 1. Start a clean thread (drop unrelated history).
 2. User may still attach references in the UI.
-3. Agent only: resolve attachment paths → short prompt file → `edit --image ...`.
-4. Do not re-read reference bytes, skill sample images, or produce long vision writeups.
-5. Only if a clean thread still fails: optionally reduce simultaneous attachments or use a smaller-resolution copy as a last resort.
+3. Agent: resolve attachment paths → `preview` → Read only `PREVIEW` with short notes → `edit --image ORIGINAL`.
+4. Do not re-open full-resolution originals/attachments, skill sample images, or produce long vision writeups.
+5. Only if a clean thread still fails: optionally reduce simultaneous attachments as a last resort.
 
-`edit` prepares uploads by default (max edge 2048) for relay upload size only; that is separate from chat context. Use `--no-prepare-image` when the original file must be uploaded unchanged.
+`preview` (default edge 768) is for agent vision budget; `edit` prepare (default edge 2048) is for relay upload size. Use `--no-prepare-image` when the original file must be uploaded unchanged.
 
 ## Repository Layout
 
