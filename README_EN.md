@@ -620,6 +620,18 @@ Recovery:
 
 `preview` (default edge 768) is for agent vision budget; `edit` prepare (default edge 2048) is for relay upload size. Use `--no-prepare-image` when the original file must be uploaded unchanged.
 
+### Extract text from Word scripts (stdlib only)
+
+If the storyboard input is a `.docx`, do **not** install `python-docx` or automate Word. Use:
+
+```powershell
+$extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
+python $extract "C:/path/to/script.docx" --out prompts/_script.txt
+python $extract --test
+```
+
+It only unzips the package and parses `word/document.xml` (paragraphs and tables) into UTF-8 text.
+
 ## Repository Layout
 
 ```text
@@ -634,6 +646,7 @@ relay-imagegen/
   scripts/
     relay_imagegen.py
     setup.py
+    extract_docx_text.py
 ```
 
 Not included in the public repository:

@@ -29,6 +29,8 @@ You are an **executor**, not an architect. Do not deep-plan, multi-option design
 7. Host `timeout_ms` / `block_until_ms` must be **integers** (e.g. `900000`, never `900000.0`).
 8. On failure: report `FAILURE_SUMMARY` / stderr tail only; no silent retries. At most one
    retry after the user agrees to a concrete single change.
+9. Do **not** install `python-docx` / Word COM / Office interop to read scripts. Use
+   `scripts/extract_docx_text.py` only.
 
 ### Fixed path (pick one absolute path; do not probe)
 
@@ -41,9 +43,23 @@ $skill = "$HOME/.codex/skills/relay-imagegen/scripts/relay_imagegen.py"
 
 Work only in the user project cwd. Use `prompts/` and `generated/` there.
 
+### Word / .docx scripts (mandatory when input is .docx)
+
+Do **not** install `python-docx`, open Word COM, or wait on “document dependencies”.
+Use the stdlib extractor next to this skill:
+
+```powershell
+$extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
+# or: $HOME/.agents/skills/relay-imagegen/scripts/extract_docx_text.py
+python $extract "C:/path/to/script.docx" --out prompts/_script.txt
+```
+
+Then read only `prompts/_script.txt` (or stdout). Never re-parse the `.docx`.
+
 ### Ordered steps (no exploration between steps)
 
-1. **Shot list once** — from user script/text: `shot id | one-line scene | landscape|portrait`.
+1. **Shot list once** — from user text, or from `.docx` via `extract_docx_text.py` →
+   `prompts/_script.txt`, then: `shot id | one-line scene | landscape|portrait`.
    Do not invent extra “cinematic” shots beyond the script.
 2. **One style file** — `prompts/_style.txt` (short style + negatives). Reuse by prepending.
 3. **Write all prompts** — `prompts/shot-01.txt` … `shot-NN.txt` (style + scene). Finish writing

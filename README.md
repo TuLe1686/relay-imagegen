@@ -684,6 +684,18 @@ Start a new thread or clear earlier history before retrying.
 
 `preview`（默认边长 768）管 agent 看图预算；`edit` 默认上传前预处理（边长 2048）管中转上传体积。需要原图上传时加 `--no-prepare-image`。
 
+### 从 Word 脚本抽文本（无第三方依赖）
+
+分镜任务若输入是 `.docx`，**不要**安装 `python-docx` 或调用 Word。使用：
+
+```powershell
+$extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
+python $extract "C:/path/to/script.docx" --out prompts/_script.txt
+python $extract --test
+```
+
+只解压 zip 并解析 `word/document.xml`（含段落与表格），输出 UTF-8 纯文本。
+
 ## 仓库结构
 
 ```text
@@ -698,6 +710,7 @@ relay-imagegen/
   scripts/
     relay_imagegen.py
     setup.py
+    extract_docx_text.py
 ```
 
 以下内容不会包含在公开仓库中：
