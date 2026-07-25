@@ -51,10 +51,12 @@ Use the stdlib extractor next to this skill:
 ```powershell
 $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
 # or: $HOME/.agents/skills/relay-imagegen/scripts/extract_docx_text.py
-python $extract "C:/path/to/script.docx" --out prompts/_script.txt
+python $extract "C:/path/to/script.docx" --out prompts/_script.txt --media-dir prompts/_script_media
 ```
 
 Then read only `prompts/_script.txt` (or stdout). Never re-parse the `.docx`.
+Embedded images appear as `[IMAGE:imageN.png]`; files land in `--media-dir` for
+optional `preview` / `edit` refs. Do not ignore image-only table cells.
 
 ### Ordered steps (no exploration between steps)
 

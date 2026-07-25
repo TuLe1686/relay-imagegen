@@ -626,11 +626,11 @@ If the storyboard input is a `.docx`, do **not** install `python-docx` or automa
 
 ```powershell
 $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
-python $extract "C:/path/to/script.docx" --out prompts/_script.txt
+python $extract "C:/path/to/script.docx" --out prompts/_script.txt --media-dir prompts/_script_media
 python $extract --test
 ```
 
-It only unzips the package and parses `word/document.xml` (paragraphs and tables) into UTF-8 text.
+It only unzips the package and parses `word/document.xml` (paragraphs, tables, embedded images) into UTF-8 text. Table cells are joined with ` | `; images become `[IMAGE:filename]` and are exported with `--media-dir`.
 
 ## Repository Layout
 

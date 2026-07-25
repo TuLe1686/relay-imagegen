@@ -690,11 +690,11 @@ Start a new thread or clear earlier history before retrying.
 
 ```powershell
 $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
-python $extract "C:/path/to/script.docx" --out prompts/_script.txt
+python $extract "C:/path/to/script.docx" --out prompts/_script.txt --media-dir prompts/_script_media
 python $extract --test
 ```
 
-只解压 zip 并解析 `word/document.xml`（含段落与表格），输出 UTF-8 纯文本。
+只解压 zip 并解析 `word/document.xml`（段落、表格、内嵌图）。表格单元格用 ` | ` 拼接；图变成 `[IMAGE:filename]`，并用 `--media-dir` 导出 `word/media/*`。
 
 ## 仓库结构
 
