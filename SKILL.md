@@ -12,6 +12,70 @@ description: >-
 
 # Relay Imagegen
 
+## Agent Fast Path (mandatory)
+
+You are an **executor**, not an architect. Do not deep-plan, multi-option design, or
+“fully understand the skill” before the first successful image.
+
+### Hard bans
+
+1. Do **not** read `README.md`, `README_EN.md`, `README/*` samples, or skill demo images.
+2. Do **not** scan plugins, alternate skill copies, or re-resolve paths for many turns.
+3. Do **not** run `setup.py --check` / `--check-codex` / `--check-ccswitch` unless
+   `generate`/`edit` already failed with missing config.
+4. Do **not** write long plans, todo lists, or architecture notes before shot 1 succeeds.
+5. Do **not** switch `--model`, downsize, or change aspect unless the user explicitly agrees.
+6. Do **not** run parallel `generate` jobs. One image per call, serial only.
+7. Host `timeout_ms` / `block_until_ms` must be **integers** (e.g. `900000`, never `900000.0`).
+8. On failure: report `FAILURE_SUMMARY` / stderr tail only; no silent retries. At most one
+   retry after the user agrees to a concrete single change.
+
+### Fixed path (pick one absolute path; do not probe)
+
+```powershell
+# Codex install (common)
+$skill = "$HOME/.codex/skills/relay-imagegen/scripts/relay_imagegen.py"
+# Agents skills install (if that is where this skill lives)
+# $skill = "$HOME/.agents/skills/relay-imagegen/scripts/relay_imagegen.py"
+```
+
+Work only in the user project cwd. Use `prompts/` and `generated/` there.
+
+### Ordered steps (no exploration between steps)
+
+1. **Shot list once** — from user script/text: `shot id | one-line scene | landscape|portrait`.
+   Do not invent extra “cinematic” shots beyond the script.
+2. **One style file** — `prompts/_style.txt` (short style + negatives). Reuse by prepending.
+3. **Write all prompts** — `prompts/shot-01.txt` … `shot-NN.txt` (style + scene). Finish writing
+   before any relay call.
+4. **Prove the pipe once**
+
+```powershell
+python $skill generate --prompt-file prompts/shot-01.txt --name shot-01 --size 3840x2160 --force
+```
+
+   - 4K landscape `3840x2160`; 4K portrait `2160x3840`; 2K landscape `2560x1440`; 2K portrait `1440x2560`.
+   - Never pass `--size 4K` / `2K` / `16:9` as CLI values.
+   - Host wait ≥ `900000` ms for 4K; optional `--timeout 900` if the user needs a longer cap.
+   - Success → record `OUTPUT` / size / `META`. Failure → stop and report `FAILURE_SUMMARY`.
+5. **Serial remainder** — same command for shot-02…NN (only `--prompt-file` and `--name` change).
+   If a PowerShell batch script breaks on quoting, fall back to one `python` call per shot.
+6. **Short report** — count, output dir, size match, failed shot ids. No process essay.
+
+### Time budget
+
+- Steps 1–3 should start step 4 quickly. If you are still inspecting skill files / setup after
+  several tool rounds with zero `generate`, you are violating this path.
+- Long silent waits during `generate`/`edit` (minutes) are normal for 4K relays — do not abandon
+  the job to re-read this skill or re-check config.
+- Do not auto-downgrade 4K→2K “to be safe” unless the user asks or consents after a failure.
+
+### Multi-shot / storyboard
+
+This skill is one image per CLI call. Multi-shot means: write N prompt files → serial `generate`.
+No batch subcommand required. Resume by skipping shots that already have a successful output +
+matching `.meta.json` when the user wants continue-from-existing.
+
 ## Product stance (designers)
 
 This skill amplifies people who already have taste and craft. The **chat model is
@@ -97,6 +161,8 @@ huge attachments), recover with a clean thread and the same flow: resolve path �
 for attaching files.
 
 ## Fast Path
+
+Execution order and bans: see **Agent Fast Path** at the top. This section is defaults and CLI shape only.
 
 Use `scripts/relay_imagegen.py` directly. The defaults are tuned for low-thinking relay image runs:
 
