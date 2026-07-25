@@ -29,8 +29,9 @@ You are an **executor**, not an architect. Do not deep-plan, multi-option design
 7. Host `timeout_ms` / `block_until_ms` must be **integers** (e.g. `900000`, never `900000.0`).
 8. On failure: report `FAILURE_SUMMARY` / stderr tail only; no silent retries. At most one
    retry after the user agrees to a concrete single change.
-9. Do **not** install `python-docx` / Word COM / Office interop to read scripts. Use
-   `scripts/extract_docx_text.py` only.
+9. Do **not** install `python-docx` / Word COM / Office interop ad hoc, and do **not**
+   wait on host “Loading document dependencies”. Prefer an **installed office skill**
+   (see below); if none, use this skill’s `scripts/extract_docx_text.py` only.
 
 ### Fixed path (pick one absolute path; do not probe)
 
@@ -43,10 +44,47 @@ $skill = "$HOME/.codex/skills/relay-imagegen/scripts/relay_imagegen.py"
 
 Work only in the user project cwd. Use `prompts/` and `generated/` there.
 
-### Word / .docx scripts (mandatory when input is .docx)
+### Office / script inputs (priority list + fallback)
 
-Do **not** install `python-docx`, open Word COM, or wait on “document dependencies”.
-Use the stdlib extractor next to this skill:
+This skill **does not own** Office parsing. Resolve script text + optional media first,
+then generate. Prefer **already-installed** external skills; only then use the local
+stdlib fallback.
+
+#### Input already plain / structured — use as-is (no Office skill)
+
+| Input | Action |
+|-------|--------|
+| User paste / `.txt` / `.md` | Read directly → shotlist |
+| `prompts/_script.txt` already present | Read it; do not re-open the source `.docx` |
+| `shotlist.csv` / `shotlist.json` / `shotlist.md` | Use as shotlist (no re-extract) |
+
+#### External office skills — try in this order when source is binary
+
+Only use a skill that is **already present** under the agent’s skill roots
+(e.g. `~/.codex/skills/`, `~/.agents/skills/`, project `.agents/skills/`).
+Do **not** clone GitHub mid-task unless the user asks.
+
+| Priority | Skill / package (if installed) | Typical use | Upstream (install separately) |
+|----------|--------------------------------|-------------|-------------------------------|
+| 1 | `docx-to-md` / `doc-to-md-skills` | DOCX → markdown + extracted images (best for storyboard refs) | https://github.com/oCOZYo/doc-to-md-skills |
+| 2 | Anthropic / Claude `docx` | Read/edit Word; **read** often via `pandoc -t markdown file.docx` | https://github.com/anthropics/skills (`skills/docx`) |
+| 3 | Anthropic / Claude `pdf` | PDF extract/merge/forms | https://github.com/anthropics/skills (`skills/pdf`) or Composio mirror |
+| 4 | `claude-office-skills` bundle | DOCX/PPTX/XLSX/PDF workflows | https://github.com/tfriedel/claude-office-skills |
+| 5 | `office-mcp` / `claude-office-skills/skills` | MCP tools: `extract_text_from_docx`, PDF tools | https://github.com/claude-office-skills/skills |
+| 6 | Host CLI if already on PATH | DOCX: `pandoc -t markdown file.docx`; PDF: `pdftotext file.pdf -` | pandoc / poppler |
+
+Rules when using an external skill:
+
+1. Follow **that** skill’s Fast Path; do not invent `pip install python-docx`.
+2. Write a stable handoff into the project: `prompts/_script.txt` and, if images
+   exist, `prompts/_script_media/` (or keep that skill’s media dir and reference it).
+3. After handoff, **never re-parse** the original `.docx`/`.pdf` for the same run.
+4. If the external skill only returns text and drops table images, fall through to
+   the local fallback below (storyboard scripts often embed refs in tables).
+
+#### Local fallback (this skill — no third-party deps)
+
+Use when no external office skill is installed, or when table-embedded images were lost:
 
 ```powershell
 $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
@@ -54,14 +92,19 @@ $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
 python $extract "C:/path/to/script.docx" --out prompts/_script.txt --media-dir prompts/_script_media
 ```
 
-Then read only `prompts/_script.txt` (or stdout). Never re-parse the `.docx`.
-Embedded images appear as `[IMAGE:imageN.png]`; files land in `--media-dir` for
-optional `preview` / `edit` refs. Do not ignore image-only table cells.
+- Tables → rows with ` | `; embedded images → `[IMAGE:imageN.png]` + files in `--media-dir`.
+- Optional: `python $extract --test` (self-check).
+- PDF/PPTX: this fallback is **DOCX-only**. For PDF/PPTX without an external skill,
+  ask the user for plain text/CSV export, or use PATH tools (`pdftotext` / pandoc) if
+  already installed — do not start “Loading document dependencies” loops.
+
+Then read only `prompts/_script.txt`. Use `_script_media/*` with `preview` / `edit` when
+a shot has a matching `[IMAGE:…]` ref.
 
 ### Ordered steps (no exploration between steps)
 
-1. **Shot list once** — from user text, or from `.docx` via `extract_docx_text.py` →
-   `prompts/_script.txt`, then: `shot id | one-line scene | landscape|portrait`.
+1. **Shot list once** — from paste/CSV/JSON/MD, or Office input via **priority list →
+   fallback** → `prompts/_script.txt`, then: `shot id | one-line scene | landscape|portrait`.
    Do not invent extra “cinematic” shots beyond the script.
 2. **One style file** — `prompts/_style.txt` (short style + negatives). Reuse by prepending.
 3. **Write all prompts** — `prompts/shot-01.txt` … `shot-NN.txt` (style + scene). Finish writing

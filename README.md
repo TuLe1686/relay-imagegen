@@ -684,9 +684,24 @@ Start a new thread or clear earlier history before retrying.
 
 `preview`（默认边长 768）管 agent 看图预算；`edit` 默认上传前预处理（边长 2048）管中转上传体积。需要原图上传时加 `--no-prepare-image`。
 
-### 从 Word 脚本抽文本（无第三方依赖）
+### 脚本输入：外部 office skill 优先 + 本 skill 兜底
 
-分镜任务若输入是 `.docx`，**不要**安装 `python-docx` 或调用 Word。使用：
+`relay-imagegen` **不负责**办公解析主路径。先得到 `prompts/_script.txt`（及可选 media），再出图。
+
+**已是文本/结构化（直接用）：** 粘贴、`.txt`/`.md`、已有 `_script.txt`、`shotlist.csv|json|md`。
+
+**二进制文档时，按顺序用「已安装」的外部技能（不要任务中途 git clone）：**
+
+1. `docx-to-md` / [doc-to-md-skills](https://github.com/oCOZYo/doc-to-md-skills) — DOCX→MD+图（分镜参考最合适）
+2. [anthropics/skills](https://github.com/anthropics/skills) 的 `docx` — 读 Word（常见 `pandoc -t markdown`）
+3. 同上仓库或镜像的 `pdf` — PDF 抽取
+4. [tfriedel/claude-office-skills](https://github.com/tfriedel/claude-office-skills) — DOCX/PPTX/XLSX/PDF 套件
+5. [claude-office-skills/skills](https://github.com/claude-office-skills/skills) / `office-mcp` — MCP 抽文本等
+6. 本机已有 CLI：`pandoc`（docx）、`pdftotext`（pdf）
+
+外部 skill 抽完后写入 `prompts/_script.txt`（图放 `prompts/_script_media/`），**同一次任务不要再解析原文件**。若外部 skill 丢掉表格内嵌图，改用下方兜底。
+
+**本 skill 兜底（无第三方依赖，仅 DOCX）：**
 
 ```powershell
 $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
@@ -694,7 +709,7 @@ python $extract "C:/path/to/script.docx" --out prompts/_script.txt --media-dir p
 python $extract --test
 ```
 
-只解压 zip 并解析 `word/document.xml`（段落、表格、内嵌图）。表格单元格用 ` | ` 拼接；图变成 `[IMAGE:filename]`，并用 `--media-dir` 导出 `word/media/*`。
+表格单元格用 ` | ` 拼接；内嵌图为 `[IMAGE:filename]` 并导出到 `--media-dir`。PDF/PPTX 无外部 skill 时请用户导出 txt/csv，或使用已安装的 `pdftotext`/pandoc，禁止安装 python-docx / Word COM / 空等 document dependencies。
 
 ## 仓库结构
 

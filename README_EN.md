@@ -620,9 +620,24 @@ Recovery:
 
 `preview` (default edge 768) is for agent vision budget; `edit` prepare (default edge 2048) is for relay upload size. Use `--no-prepare-image` when the original file must be uploaded unchanged.
 
-### Extract text from Word scripts (stdlib only)
+### Script inputs: prefer external office skills, then local fallback
 
-If the storyboard input is a `.docx`, do **not** install `python-docx` or automate Word. Use:
+`relay-imagegen` does **not** own Office parsing. Obtain `prompts/_script.txt` (and optional media) first, then generate.
+
+**Already plain/structured (use as-is):** paste, `.txt`/`.md`, existing `_script.txt`, `shotlist.csv|json|md`.
+
+**Binary documents — use an already-installed skill in this order (do not git clone mid-task):**
+
+1. `docx-to-md` / [doc-to-md-skills](https://github.com/oCOZYo/doc-to-md-skills) — DOCX → MD + images (best for storyboard refs)
+2. [anthropics/skills](https://github.com/anthropics/skills) `docx` — read Word (often `pandoc -t markdown`)
+3. `pdf` skill from the same ecosystem — PDF extract
+4. [tfriedel/claude-office-skills](https://github.com/tfriedel/claude-office-skills) — DOCX/PPTX/XLSX/PDF pack
+5. [claude-office-skills/skills](https://github.com/claude-office-skills/skills) / `office-mcp` — MCP extract tools
+6. Host CLI if present: `pandoc` (docx), `pdftotext` (pdf)
+
+After external extract, write `prompts/_script.txt` (images under `prompts/_script_media/`) and **do not re-parse** the original file in the same run. If table-embedded images were dropped, use the fallback below.
+
+**Local fallback (this skill, stdlib only, DOCX only):**
 
 ```powershell
 $extract = "$HOME/.codex/skills/relay-imagegen/scripts/extract_docx_text.py"
@@ -630,7 +645,7 @@ python $extract "C:/path/to/script.docx" --out prompts/_script.txt --media-dir p
 python $extract --test
 ```
 
-It only unzips the package and parses `word/document.xml` (paragraphs, tables, embedded images) into UTF-8 text. Table cells are joined with ` | `; images become `[IMAGE:filename]` and are exported with `--media-dir`.
+Table cells join with ` | `; images become `[IMAGE:filename]` and export via `--media-dir`. For PDF/PPTX without an office skill, ask the user for txt/csv or use installed `pdftotext`/pandoc — do not install python-docx, Word COM, or stall on “document dependencies”.
 
 ## Repository Layout
 
