@@ -11,7 +11,7 @@
 给 Codex 发：
 
 ```text
-Codex，帮我安装一下这个 Skill：https://github.com/AwakeFantasy/relay-imagegen
+Codex，帮我安装一下这个 Skill：https://github.com/TuLe1686/relay-imagegen
 ```
 
 使用：
@@ -101,7 +101,7 @@ C:\Users\<你的用户名>\.codex\skills\relay-imagegen
 也可以从 GitHub 克隆：
 
 ```powershell
-git clone https://github.com/AwakeFantasy/relay-imagegen.git "$HOME/.codex/skills/relay-imagegen"
+git clone https://github.com/TuLe1686/relay-imagegen.git "$HOME/.codex/skills/relay-imagegen"
 ```
 
 安装后，当你在 Codex 中提到中转站出图、保存提示词、出图记录、ccswitch、`api_key.json` 或 `$relay-imagegen` 时，Codex 就可以使用这个 Skill。

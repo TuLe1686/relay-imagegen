@@ -11,7 +11,7 @@ Ultra quick setup:
 Ask Codex:
 
 ```text
-Codex, install this Skill for me: https://github.com/AwakeFantasy/relay-imagegen
+Codex, install this Skill for me: https://github.com/TuLe1686/relay-imagegen
 ```
 
 Use it:
@@ -89,7 +89,7 @@ API keys are not printed, not passed as command-line arguments, and not written 
 Clone or copy this repository into your Codex skills directory:
 
 ```powershell
-git clone https://github.com/AwakeFantasy/relay-imagegen.git "$HOME/.codex/skills/relay-imagegen"
+git clone https://github.com/TuLe1686/relay-imagegen.git "$HOME/.codex/skills/relay-imagegen"
 ```
 
 On Windows, the target directory is usually:
